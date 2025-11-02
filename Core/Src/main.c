@@ -23,6 +23,8 @@
 /* USER CODE BEGIN Includes */
 #include <stdlib.h>
 #include "LoRa.h"
+#include <stdio.h>
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -50,6 +52,7 @@ I2C_HandleTypeDef hi2c1;
 
 UART_HandleTypeDef hlpuart1;
 UART_HandleTypeDef huart4;
+UART_HandleTypeDef huart2;
 
 SPI_HandleTypeDef hspi1;
 
@@ -72,6 +75,7 @@ static void MX_LPUART1_UART_Init(void);
 static void MX_UART4_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_TIM3_Init(void);
+static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -116,7 +120,12 @@ int main(void)
   MX_UART4_Init();
   MX_SPI1_Init();
   MX_TIM3_Init();
+  MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
+
+  void print_debug(const char *msg) {
+      HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+  }
 	// MODULE SETTINGS ----------------------------------------------
 	myLoRa = newLoRa();
 
@@ -137,7 +146,7 @@ int main(void)
 	myLoRa.preamble				 = 8;		  				// default = 8;
 
 	LoRa_reset(&myLoRa);
-	HAL_Delay(100);
+	//HAL_Delay(100);
 	LoRa_status = LoRa_init(&myLoRa);
 
   /* USER CODE END 2 */
@@ -146,13 +155,36 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	// Test básico
 	if(LoRa_status != LORA_OK) {
-		// Reintentar o debuggear
+		print_debug("ERROR: LoRa not initialized\r\n");
 		HAL_Delay(1000);
 	} else {
-		// Prueba de comunicación
-		LoRa_startReceiving(&myLoRa);
+		send_data[0] = 65; //id baliza A
+		for(int i=0; i<26; i++) {
+			send_data[i+1] = 48+i;
+		}
+		LoRa_transmit(&myLoRa, send_data, 27, 500);
+		print_debug("TX: Sent\r\n");
+
+		HAL_Delay(1500);
+
+		uint8_t len = LoRa_receive(&myLoRa, read_data, 128);
+
+		if(len > 0) {
+			char msg[100];
+			sprintf(msg, "RX: %d bytes - ", len);
+			print_debug(msg);
+
+			for(int i=0; i<len; i++) {
+				sprintf(msg, "%c", read_data[i]);
+				print_debug(msg);
+			}
+			print_debug("\r\n");
+		} else {
+			print_debug("RX: No data\r\n");
+		}
+
+		HAL_Delay(1000);
 	}
     /* USER CODE END WHILE */
 
@@ -420,6 +452,54 @@ static void MX_UART4_Init(void)
   /* USER CODE BEGIN UART4_Init 2 */
 
   /* USER CODE END UART4_Init 2 */
+
+}
+
+/**
+  * @brief USART2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART2_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART2_Init 0 */
+
+  /* USER CODE END USART2_Init 0 */
+
+  /* USER CODE BEGIN USART2_Init 1 */
+
+  /* USER CODE END USART2_Init 1 */
+  huart2.Instance = USART2;
+  huart2.Init.BaudRate = 115200;
+  huart2.Init.WordLength = UART_WORDLENGTH_8B;
+  huart2.Init.StopBits = UART_STOPBITS_1;
+  huart2.Init.Parity = UART_PARITY_NONE;
+  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart2.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart2.Init.ClockPrescaler = UART_PRESCALER_DIV1;
+  huart2.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_SetTxFifoThreshold(&huart2, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_SetRxFifoThreshold(&huart2, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_DisableFifoMode(&huart2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART2_Init 2 */
+
+  /* USER CODE END USART2_Init 2 */
 
 }
 
