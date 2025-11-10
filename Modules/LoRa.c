@@ -23,7 +23,7 @@ LoRa newLoRa(){
 	new_LoRa.spredingFactor        = SF_7      ;
 	new_LoRa.bandWidth			   = BW_125KHz ;
 	new_LoRa.crcRate               = CR_4_5    ;
-	new_LoRa.power				   = POWER_20db;
+	new_LoRa.power				   = POWER_14db;
 	new_LoRa.overCurrentProtection = 100       ;
 	new_LoRa.preamble			   = 8         ;
 
@@ -591,4 +591,21 @@ uint16_t LoRa_init(LoRa* _LoRa){
 	else {
 		return LORA_UNAVAILABLE;
 	}
+}
+
+uint8_t LoRa_connection(LoRa* _LoRa, SPI_HandleTypeDef* _hSPIx) { //Mi config
+	_LoRa->hSPIx                 = _hSPIx;
+	_LoRa->CS_port               = SPI1_SS_LoRa_GPIO_Port;
+	_LoRa->CS_pin                = SPI1_SS_LoRa_Pin;
+	_LoRa->reset_port            = SPI1_RST_GPIO_Port;
+	_LoRa->reset_pin             = SPI1_RST_Pin;
+	_LoRa->DIO0_port			 	= LoRa_IRQ_GPIO_Port;
+	_LoRa->DIO0_pin				 = LoRa_IRQ_Pin;
+
+	LoRa_reset(_LoRa);
+
+	if(LoRa_init(_LoRa) != LORA_OK) {
+		return 1;
+	}
+	return 0; //Se inicializo bien
 }

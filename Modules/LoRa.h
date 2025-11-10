@@ -126,3 +126,4 @@ void LoRa_receive_IT(LoRa* _LoRa, uint8_t* data, uint8_t length);
 int LoRa_getRSSI(LoRa* _LoRa);
 
 uint16_t LoRa_init(LoRa* _LoRa);
+uint8_t LoRa_connection(LoRa* _LoRa, SPI_HandleTypeDef* _hSPIx); //Funcion creada para iniciar y verificar LoRa

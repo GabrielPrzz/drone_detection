@@ -49,8 +49,6 @@ extern "C" {
 
 /* USER CODE END EM */
 
-void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
-
 /* Exported functions prototypes ---------------------------------------------*/
 void Error_Handler(void);
 
@@ -69,8 +67,8 @@ void Error_Handler(void);
 #define SPI1_SS_LoRa_GPIO_Port GPIOC
 #define SPI1_RST_Pin GPIO_PIN_3
 #define SPI1_RST_GPIO_Port GPIOB
-#define WKP_ESP32_Pin GPIO_PIN_5
-#define WKP_ESP32_GPIO_Port GPIOB
+#define ESP32_WKP_Pin GPIO_PIN_5
+#define ESP32_WKP_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 
