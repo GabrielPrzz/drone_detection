@@ -71,7 +71,45 @@ void Error_Handler(void);
 #define ESP32_WKP_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
+#define RSSI_BUFFER_SIZE 13
+#define HISTORY_SIZE 4
 
+typedef enum {
+	NODE_ERROR,				//Alguno de los modulos, ajeno al LoRa fallo o no esta funcionando correctamente
+	SCAN,					//Solo escanendo el ambiente pero sin detectar nada todavia, funcionamiento normal
+	DETECTION,				//ALERTA previa a la triangulación, central debe confirmar recepcion de la alerta
+	TRIANGULATION,			//DRON DETECTADO y se estan mandando datos para la triangulacion
+	SLEEP_INCOMING,			//SLEEP INCOMING ALERTA
+} BALIZA_STATE;
+
+typedef enum {				//Señales que avisan que tipo de dato mandamos
+	ENERGY,
+	GPS,
+	ALERT,
+} TX_TYPE;
+
+typedef struct {
+    int8_t rssi[RSSI_BUFFER_SIZE]; 		//Este rssi sirve para detectar dron
+} scan_t;
+
+typedef struct {
+	uint8_t pending_tx;  //Flag que ayuda en transmision
+    uint8_t baliza_id;
+    BALIZA_STATE status;
+    TX_TYPE transmission_type;
+
+    scan_t rssi_buffer[HISTORY_SIZE]; 	//Buffer que almacena HISTORY SIZE arreglos de las lecturas en los 13 canales
+
+} lora_package;
+
+
+typedef struct { 			//States para verificación en las Bálizas
+	uint8_t LoRa_State;		//1 para errores, 0 para OK
+	uint8_t Esp32_State;
+	uint8_t GPS_State;
+	uint8_t Charger_State;
+	uint8_t Microphone_State;
+} MODULES;
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

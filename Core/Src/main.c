@@ -22,8 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdlib.h>
-#include <math.h> //Reemplazar cuando tenga el CMSIS
-//#include "arm_math.h"
+#include "arm_math.h"
 #include "LoRa.h"
 #include "Esp32.h"
 #include <stdio.h>
@@ -32,34 +31,7 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-#define RSSI_BUFFER_SIZE 13
-#define HISTORY_SIZE 6
-#define VARIANCE_THRESHOLD 8.0f
-#define MIN_JUMPS 3
-#define SCORE_THRESHOLD 200.0f
 
-typedef enum {
-	INITIALIZATION,			//Flag presente hasta que la baliza este lista para operar, este nunca debe mandarse
-	NODE_ERROR,				//Alguno de los modulos, ajeno al LoRa fallo o no esta funcionando correctamente
-	SCAN,					//Solo escanendo el ambiente pero sin detectar nada todavia, funcionamiento normal
-	TRIANGULATION,			//DRON DETECTADO y se estan mandando datos para la triangulacion
-	SLEEP_INCOMING,			//Este estado se comunica 30 segundos antes de empezar su ciclo de sueño para que estacion central despierte al siguiente (O se puede manejar por tiempo, pero como aviso es bueno)
-} BALIZA_STATE;
-
-typedef struct {
-    uint8_t baliza_id;
-    BALIZA_STATE status;
-    int8_t rssi_transmited[RSSI_BUFFER_SIZE]; //Este sirve para triangulación
-} lora_alert_tx;
-
-typedef struct {
-    int8_t rssi[RSSI_BUFFER_SIZE]; 		//Este rssi sirve para detectar dron
-} scan_t;
-
-typedef struct { 			//States para verificación en las Bálizas
-	uint8_t LoRa_State;		//1 para errores, 0 para OK
-	uint8_t Esp32_State;
-} MODULES;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -80,6 +52,7 @@ I2C_HandleTypeDef hi2c1;
 UART_HandleTypeDef hlpuart1;
 UART_HandleTypeDef huart4;
 UART_HandleTypeDef huart2;
+DMA_HandleTypeDef handle_GPDMA1_Channel1;
 
 SPI_HandleTypeDef hspi1;
 
@@ -88,38 +61,34 @@ TIM_HandleTypeDef htim3;
 /* USER CODE BEGIN PV */
 MODULES devices;
 LoRa myLoRa;
-lora_alert_tx tx_package;
+lora_package tx_package;
+
+uint8_t rssi_index = 0;
+int8_t uart_rx_buffer[15];  			//[0xAA][rssi×13][CRC] Variable auxiliar
+uint8_t drone_alert_counter = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_GPDMA1_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_LPUART1_UART_Init(void);
 static void MX_UART4_Init(void);
 static void MX_SPI1_Init(void);
-static void MX_USART2_UART_Init(void);
 static void MX_TIM3_Init(void);
+static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 void print_debug(const char *msg);
 void new_rssi_load(int8_t* data, scan_t* history, uint8_t* index);
-
-//Funciones a reemplazar con Dsp
-int8_t find_max(int8_t *rssi, uint8_t *max_idx);
-int8_t find_mean(int8_t *rssi);
-float_t calculate_variance(float_t *data);
-
 uint8_t detect_drone(scan_t* history);
-//
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-scan_t rssi_buffer[HISTORY_SIZE]; 		//Buffer que almacena 6 arreglos de las lecturas en los 13 canales
-uint8_t rssi_index = 0;
-int8_t uart_rx_buffer[15];  //[0xAA][rssi×13][CRC]
-uint8_t drone_alert_counter = 0;
+
 /* USER CODE END 0 */
 
 /**
@@ -151,38 +120,41 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_GPDMA1_Init();
   MX_ADC1_Init();
   MX_I2C1_Init();
   MX_LPUART1_UART_Init();
   MX_UART4_Init();
   MX_SPI1_Init();
-  MX_USART2_UART_Init();
   MX_TIM3_Init();
+  MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
-  HAL_TIM_Base_Stop_IT(&htim3); //Solo se activa cuando las inicializaciones estan correctas
+  HAL_TIM_Base_Stop_IT(&htim3); 						//Solo se activa cuando las inicializaciones estan correctas
 
 	//LoRa MODULE Startup
-	myLoRa = newLoRa(); //Inicializa el modulo LoRa con las configuraciones cargadas
-
+	myLoRa = newLoRa(); 								//Inicializa el modulo LoRa con las configuraciones cargadas
 	devices.LoRa_State = LoRa_connection(&myLoRa, &hspi1);
+	//ESP32 startup
+	devices.Esp32_State = esp32_connection(&huart4);
 
-	 if (!devices.LoRa_State) {
-		tx_package.baliza_id = 65; //Baliza A, B y C...
-		tx_package.status = INITIALIZATION;
-	 } else {
-		tx_package.status = NODE_ERROR;
-		print_debug("ERROR: LoRa not initialized\r\n");
+	 if (devices.LoRa_State || devices.Esp32_State) { 	//Aqui se agregan los demas para verificar error
+	     tx_package.status = NODE_ERROR;
+	     print_debug("ERROR: Init failed\r\n");
 	 }
 
-	 //ESP32 startup
-	devices.Esp32_State = esp32_connection(&huart4);
-	 if (!devices.Esp32_State) {
-		 tx_package.status = INITIALIZATION;
-		 HAL_TIM_Base_Start_IT(&htim3);
-	   	 HAL_UART_Receive_IT(&huart4, uart_rx_buffer, 15);
+
+	 if (!devices.LoRa_State && tx_package.status == NODE_ERROR) { 					//Error reportable al estar activo el LoRa
+		 LoRa_transmit_error_pkg(&myLoRa, &tx_package, &devices);					//Envia el status de los devices para visualizar error en dashboard y central unit
+	 } else if (devices.LoRa_State) { 												//CRITICAL ERROR, BUZZER ALERT
+		 print_debug("CRITICAL ERROR: LoRa failed\r\n");
+		 //Agregar funcion que hace ruido
 	 } else {
-		tx_package.status = NODE_ERROR;
-		print_debug("ERROR: ESP32 not initialized\r\n");
+	     tx_package.status = SCAN;								//Si todo evoluciona bien, comienza scan
+	     tx_package.transmission_type = ALERT;					//Inicio por defecto en ALERT
+	     tx_package.baliza_id = 65; //Baliza A, B y C...		//Fijar ID por baliza
+
+	     HAL_TIM_Base_Start_IT(&htim3);
+	     HAL_UART_Receive_DMA(&huart4, uart_rx_buffer, 15);
 	 }
 
   /* USER CODE END 2 */
@@ -191,11 +163,6 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	 if (!devices.LoRa_State && !devices.Esp32_State) { //Aqui entramos a modo SCAN despues de validar todos nuestros modulos
-			tx_package.status = SCAN;
-	 } else {
-		 //print_debug("ERROR, module connection failed");
-	 }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -319,6 +286,34 @@ static void MX_ADC1_Init(void)
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
+  * @brief GPDMA1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_GPDMA1_Init(void)
+{
+
+  /* USER CODE BEGIN GPDMA1_Init 0 */
+
+  /* USER CODE END GPDMA1_Init 0 */
+
+  /* Peripheral clock enable */
+  __HAL_RCC_GPDMA1_CLK_ENABLE();
+
+  /* GPDMA1 interrupt Init */
+    HAL_NVIC_SetPriority(GPDMA1_Channel1_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(GPDMA1_Channel1_IRQn);
+
+  /* USER CODE BEGIN GPDMA1_Init 1 */
+
+  /* USER CODE END GPDMA1_Init 1 */
+  /* USER CODE BEGIN GPDMA1_Init 2 */
+
+  /* USER CODE END GPDMA1_Init 2 */
 
 }
 
@@ -460,8 +455,7 @@ static void MX_UART4_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN UART4_Init 2 */
-  HAL_NVIC_SetPriority(UART4_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(UART4_IRQn);
+
   /* USER CODE END UART4_Init 2 */
 
 }
@@ -584,7 +578,7 @@ static void MX_TIM3_Init(void)
   htim3.Instance = TIM3;
   htim3.Init.Prescaler = 127;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 62499;
+  htim3.Init.Period = 58332;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
@@ -681,75 +675,11 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
-/* FUNCIONES A REEMPLAZAR CON LA CONFIGURACION DEL DSP */
 
-// Reemplaza arm_max_q7 con loop manual
-int8_t find_max(int8_t *rssi, uint8_t *max_idx) {
-    int8_t max = rssi[0];
-    *max_idx = 0;
-    for (int i = 1; i < RSSI_BUFFER_SIZE; i++) {
-        if (rssi[i] > max) {
-            max = rssi[i];
-            *max_idx = i;
-        }
-    }
-    return max;
+uint8_t detect_drone(scan_t* history) { //Falta implementar detección
+	return 1;
 }
 
-int8_t find_mean(int8_t *rssi) {
-    int32_t sum = 0;
-    for (int i = 0; i < RSSI_BUFFER_SIZE; i++) sum += rssi[i];
-    return (int8_t)(sum / RSSI_BUFFER_SIZE);
-}
-
-float_t calculate_variance(float_t *data) {
-    float_t mean = 0, var = 0;
-    for (int i = 0; i < HISTORY_SIZE; i++) mean += data[i];
-    mean /= HISTORY_SIZE;
-    for (int i = 0; i < HISTORY_SIZE; i++) {
-        var += (data[i] - mean) * (data[i] - mean);
-    }
-    return var / HISTORY_SIZE;
-}
-
-uint8_t detect_drone(scan_t* history) {
-    int8_t max_val;
-    uint8_t max_idx;
-    int8_t noise_floor;
-    float_t variance, score;
-    uint8_t jumps = 0;
-
-    // Peak actual
-    max_val = find_max(history[0].rssi, &max_idx);
-    noise_floor = find_mean(history[0].rssi);
-
-    if (max_val < (noise_floor + 20)) return 0;
-
-    // Varianza temporal del peak
-    float_t peak_history[HISTORY_SIZE];
-    for (int i = 0; i < HISTORY_SIZE; i++) {
-        peak_history[i] = (float_t)find_max(history[i].rssi, &max_idx);
-    }
-    variance = calculate_variance(peak_history);
-
-    if (variance < VARIANCE_THRESHOLD) return 0;
-
-    // Channel jumps
-    for (int i = 1; i < HISTORY_SIZE; i++) {
-        uint8_t idx1, idx2;
-        find_max(history[i-1].rssi, &idx1);
-        find_max(history[i].rssi, &idx2);
-        if (abs((int)idx1 - (int)idx2) >= 2) jumps++;
-    }
-
-    if (jumps < MIN_JUMPS) return 0;
-
-    // Score
-    score = (max_val + 100) * (variance / 5.0f) * (jumps / 4.0f);
-    return (score > SCORE_THRESHOLD) ? 1 : 0;
-}
-
-/* FUNCIONES A REEMPLAZAR CON LA CONFIGURACION DEL DSP */
 
 
 void print_debug(const char *msg) { //Funcion de debuggeo, posterior eliminación
@@ -764,44 +694,76 @@ void new_rssi_load(int8_t* data, scan_t* history, uint8_t* index) {
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 	if (htim == &htim3) {
 		esp32_scan(&huart4); //Mandamos comando para escaneo
-		print_debug(">> SCAN REQUEST (250ms)\r\n"); //Debug quitar
+		print_debug(">> SCAN REQUEST (350ms)\r\n"); //Debug quitar
 	}
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 	if(huart == &huart4) {
-        if (uart_rx_buffer[0] == 0xAA) {
+        if (uart_rx_buffer[0] == ESP32_CHECK) {
+
+            if (uart_rx_buffer[14] != calculate_crc8(&uart_rx_buffer[1], 13)) { //Comparando el crc recibido con el calculado
+                print_debug("CRC ERROR - Descartando paquete\r\n");
+                HAL_UART_Receive_DMA(&huart4, uart_rx_buffer, 15);
+                return;  //No procesar datos corruptos
+            }
+
         	//Quitar debug
             char debug[80];
             sprintf(debug, "RX[%d]: CH1=%d CH7=%d CH13=%d\r\n",
                 rssi_index, uart_rx_buffer[1], uart_rx_buffer[7], uart_rx_buffer[13]);
             print_debug(debug);
 
-
             //Guardar en histórico y avanza el indice
-            new_rssi_load(&uart_rx_buffer[1], rssi_buffer, &rssi_index);
+            new_rssi_load(&uart_rx_buffer[1], tx_package.rssi_buffer, &rssi_index);
 
-            // Detectar (solo después de 6 muestras)
-            if (rssi_index == 0) {  //Buffer completó ciclo e historico esta lleno
-                if (detect_drone(rssi_buffer)) {
-                    drone_alert_counter++;
-                    sprintf(debug, "ALERT: Counter=%d\r\n", drone_alert_counter); //Debug
-                    print_debug(debug);
-                    if (drone_alert_counter >= 2) {
-                        print_debug("!!! DRONE DETECTED !!!\r\n");
-                        tx_package.status = TRIANGULATION;
-                        drone_alert_counter = 0;
-                    }
-                }
-                else {
-                    print_debug("No drone signal\r\n"); //Debug
-                    drone_alert_counter = 0;
-                }
-            }
+
+            //Deteccion
+			if (detect_drone(tx_package.rssi_buffer)) {
+				if (drone_alert_counter < HISTORY_SIZE) {
+				  drone_alert_counter++;
+				}
+				sprintf(debug, "ALERT: Counter=%d\r\n", drone_alert_counter); 	//Debug
+				print_debug(debug);
+			} else if (drone_alert_counter > 0) { 								//Forma estricta de tratar falsos positivos
+				drone_alert_counter = 0;
+				sprintf(debug, "ALERT: Counter=%d\r\n", drone_alert_counter); 	//Debug
+				print_debug(debug);
+			} else { 															//No captamos nada
+				print_debug("No drone signal\r\n"); 							//Debug
+				drone_alert_counter = 0;
+
+			    if (tx_package.status == TRIANGULATION) { 						//En caso de perdida
+			        print_debug("!!! DRONE LOST !!!\r\n");
+			        tx_package.status = SCAN;
+			    }
+			}
+																				//Perdida de dron
+			if (drone_alert_counter >= HISTORY_SIZE && tx_package.status != TRIANGULATION) {
+				print_debug("!!! DRONE DETECTED !!!\r\n");
+		        tx_package.transmission_type = ALERT;
+		        tx_package.status = DETECTION; 									//Paso previo al triangulation, manda alerta y espera acknowledge
+			}
+			tx_package.pending_tx = 1;											//Flag de tranmisión
         }
-		HAL_UART_Receive_IT(&huart4, uart_rx_buffer, 15); //Reactivamos la recepcion por interrupcion
+        HAL_UART_Receive_DMA(&huart4, uart_rx_buffer, 15); 						//Reactivamos la recepcion por DMA
 	}
 }
+
+void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin) {
+    if (GPIO_Pin == LoRa_IRQ_Pin) {
+        //Solo transmitir si hay datos pendientes
+        if (tx_package.pendiAhong_tx) {
+            if (tx_package.status == TRIANGULATION) {
+                LoRa_transmit_triang_pkg(&myLoRa, &tx_package);
+            } else {
+                LoRa_transmit_scan_pkg(&myLoRa, &tx_package, tx_package.transmission_type);
+            }
+            tx_package.pending_tx = 0;  //Limpiar flag
+        }
+    }
+}
+
 /* USER CODE END 4 */
 
 /**

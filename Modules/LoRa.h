@@ -9,9 +9,9 @@
 //--------- MODES ---------//
 #define SLEEP_MODE			0
 #define	STNBY_MODE			1
-#define TRANSMIT_MODE			3
-#define RXCONTIN_MODE			5
-#define RXSINGLE_MODE			6
+#define TRANSMIT_MODE		3
+#define RXCONTIN_MODE		5
+#define RXSINGLE_MODE		6
 
 //------- BANDWIDTH -------//
 #define BW_7_8KHz			0
@@ -71,13 +71,21 @@
 #define RegSyncWord				0x39
 #define RegDioMapping1			0x40
 #define RegDioMapping2			0x41
-#define RegVersion			0x42
+#define RegVersion				0x42
 
 //------ LORA STATUS ------//
-#define LORA_OK				200
+#define LORA_OK					200
 #define LORA_NOT_FOUND			404
 #define LORA_LARGE_PAYLOAD		413
 #define LORA_UNAVAILABLE		503
+
+// Transmission limits
+#define LORA_MAX_SIZE 			64
+#define LORA_ERROR_PKG_SIZE		6
+#define LORA_ENERGY_PKG_SIZE	6
+#define LORA_ALERT_PKG_SIZE		5
+#define LORA_GPS_PKG_SIZE		15	//Falta por cambiar
+#define LORA_TRIANG_PKG_SIZE 	54 	//Contemplando ID y status
 
 typedef struct LoRa_setting{
 	// Hardware setings:
@@ -127,3 +135,7 @@ int LoRa_getRSSI(LoRa* _LoRa);
 
 uint16_t LoRa_init(LoRa* _LoRa);
 uint8_t LoRa_connection(LoRa* _LoRa, SPI_HandleTypeDef* _hSPIx); //Funcion creada para iniciar y verificar LoRa
+
+void LoRa_transmit_error_pkg(LoRa* _LoRa, lora_package* transmission, MODULES* device_state);
+void LoRa_transmit_scan_pkg(LoRa* _LoRa, lora_package* transmission, TX_TYPE transmission_type);
+void LoRa_transmit_triang_pkg(LoRa* _LoRa, lora_package* transmission);

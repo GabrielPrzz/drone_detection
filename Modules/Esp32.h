@@ -16,5 +16,6 @@
 
 uint8_t esp32_connection(UART_HandleTypeDef* _uart);
 void esp32_scan(UART_HandleTypeDef* _uart);
+uint8_t calculate_crc8(int8_t *data, uint8_t len);
 
 #endif /* ESP32_H_ */
