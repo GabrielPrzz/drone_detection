@@ -15,7 +15,7 @@ uint8_t MAX17048_connection(I2C_HandleTypeDef* hi2c) {
 
 float_t MAX17048_getVoltage(I2C_HandleTypeDef* hi2c) {
 	uint8_t VCELL_buff[2];
-	float_t VCELL_raw;
+	uint16_t VCELL_raw;
 
 	HAL_I2C_Mem_Read(hi2c, MAX17048_I2CADDR_DEFAULT, MAX1704X_VCELL_REG, 1, &VCELL_buff[0], 2, 1000);
 
@@ -26,7 +26,7 @@ float_t MAX17048_getVoltage(I2C_HandleTypeDef* hi2c) {
 
 float_t MAX17048_getPercentage(I2C_HandleTypeDef* hi2c){
 	uint8_t SOC_buff[2];
-	float_t SOC_raw;
+	uint16_t SOC_raw;
 
 	HAL_I2C_Mem_Read(hi2c, MAX17048_I2CADDR_DEFAULT, MAX1704X_SOC_REG, 1, &SOC_buff[0], 2, 1000);
 
@@ -36,7 +36,7 @@ float_t MAX17048_getPercentage(I2C_HandleTypeDef* hi2c){
 
 float_t MAX17048_getDisChargeRate(I2C_HandleTypeDef* hi2c) {
 	uint8_t CRATE_buff[2];
-	float_t CRATE_raw;
+	int16_t CRATE_raw;
 
 	HAL_I2C_Mem_Read(hi2c, MAX17048_I2CADDR_DEFAULT, MAX1704X_CRATE_REG, 1, &CRATE_buff[0], 2, 1000);
 
