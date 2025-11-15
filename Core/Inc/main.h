@@ -61,10 +61,18 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 #define BTN_Pin GPIO_PIN_13
 #define BTN_GPIO_Port GPIOC
+#define BTN_EXTI_IRQn EXTI13_IRQn
+#define LED2_Pin GPIO_PIN_5
+#define LED2_GPIO_Port GPIOA
+#define LoRa_IRQ_Pin GPIO_PIN_8
+#define LoRa_IRQ_GPIO_Port GPIOC
+#define LoRa_IRQ_EXTI_IRQn EXTI8_IRQn
 #define SPI1_SS_LoRa_Pin GPIO_PIN_9
-#define SPI1_SS_LoRa_GPIO_Port GPIOA
-#define WKP_ESP32_Pin GPIO_PIN_5
-#define WKP_ESP32_GPIO_Port GPIOB
+#define SPI1_SS_LoRa_GPIO_Port GPIOC
+#define SPI1_RST_Pin GPIO_PIN_3
+#define SPI1_RST_GPIO_Port GPIOB
+#define ESP32_WKP_Pin GPIO_PIN_5
+#define ESP32_WKP_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 
