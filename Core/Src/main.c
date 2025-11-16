@@ -130,7 +130,6 @@ int main(void)
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Stop_IT(&htim3); 						//Solo se activa cuando las inicializaciones estan correctas
-
 	//LoRa MODULE Startup
 	myLoRa = newLoRa(); 								//Inicializa el modulo LoRa con las configuraciones cargadas
 	devices.LoRa_State = LoRa_connection(&myLoRa, &hspi1);
@@ -143,13 +142,15 @@ int main(void)
 	 }
 
 
+
 	 if (!devices.LoRa_State && tx_package.status == NODE_ERROR) { 					//Error reportable al estar activo el LoRa
 		 LoRa_transmit_error_pkg(&myLoRa, &tx_package, &devices);					//Envia el status de los devices para visualizar error en dashboard y central unit
 	 } else if (devices.LoRa_State) { 												//CRITICAL ERROR, BUZZER ALERT
 		 print_debug("CRITICAL ERROR: LoRa failed\r\n");
 		 //Agregar funcion que hace ruido
-	 } else {
-	     tx_package.status = SCAN;								//Si todo evoluciona bien, comienza scan
+	 }
+
+	 if (tx_package.status != NODE_ERROR) {							//Si evoluciona bien, comienza scan
 	     tx_package.transmission_type = ALERT;					//Inicio por defecto en ALERT
 	     tx_package.baliza_id = 65; //Baliza A, B y C...		//Fijar ID por baliza
 
@@ -163,6 +164,14 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+      if (tx_package.pending_tx) {
+          if (tx_package.status == TRIANGULATION) {
+              LoRa_transmit_triang_pkg(&myLoRa, &tx_package);
+          } else {
+              LoRa_transmit_scan_pkg(&myLoRa, &tx_package, tx_package.transmission_type);
+          }
+          tx_package.pending_tx = 0;  //Limpiar flag
+      }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -700,7 +709,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 	if(huart == &huart4) {
-        if (uart_rx_buffer[0] == ESP32_CHECK) {
+        if ((uint8_t)uart_rx_buffer[0] == ESP32_CHECK) {
 
             if (uart_rx_buffer[14] != calculate_crc8(&uart_rx_buffer[1], 13)) { //Comparando el crc recibido con el calculado
                 print_debug("CRC ERROR - Descartando paquete\r\n");
@@ -750,10 +759,11 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 	}
 }
 
-void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin) {
+
+void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin) {
     if (GPIO_Pin == LoRa_IRQ_Pin) {
         //Solo transmitir si hay datos pendientes
-        if (tx_package.pendiAhong_tx) {
+        if (tx_package.pending_tx) {
             if (tx_package.status == TRIANGULATION) {
                 LoRa_transmit_triang_pkg(&myLoRa, &tx_package);
             } else {
@@ -763,6 +773,7 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin) {
         }
     }
 }
+
 
 /* USER CODE END 4 */
 

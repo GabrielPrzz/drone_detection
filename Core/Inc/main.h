@@ -75,6 +75,7 @@ void Error_Handler(void);
 #define HISTORY_SIZE 4
 
 typedef enum {
+	INITIALIZATION,
 	NODE_ERROR,				//Alguno de los modulos, ajeno al LoRa fallo o no esta funcionando correctamente
 	SCAN,					//Solo escanendo el ambiente pero sin detectar nada todavia, funcionamiento normal
 	DETECTION,				//ALERTA previa a la triangulación, central debe confirmar recepcion de la alerta

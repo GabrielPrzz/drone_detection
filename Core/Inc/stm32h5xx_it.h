@@ -59,6 +59,7 @@ void EXTI8_IRQHandler(void);
 void EXTI13_IRQHandler(void);
 void GPDMA1_Channel1_IRQHandler(void);
 void TIM3_IRQHandler(void);
+void SPI1_IRQHandler(void);
 void USART2_IRQHandler(void);
 /* USER CODE BEGIN EFP */
 

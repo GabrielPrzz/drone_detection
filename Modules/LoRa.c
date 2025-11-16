@@ -101,6 +101,7 @@ void LoRa_gotoMode(LoRa* _LoRa, int mode){
 
 		returns     : Nothing
 \* ----------------------------------------------------------------------------- */
+
 void LoRa_readReg(LoRa* _LoRa, uint8_t* address, uint16_t r_length, uint8_t* output, uint16_t w_length){
 	HAL_GPIO_WritePin(_LoRa->CS_port, _LoRa->CS_pin, GPIO_PIN_RESET);
 	HAL_SPI_Transmit(_LoRa->hSPIx, address, r_length, TRANSMIT_TIMEOUT);
@@ -110,7 +111,9 @@ void LoRa_readReg(LoRa* _LoRa, uint8_t* address, uint16_t r_length, uint8_t* out
 	while (HAL_SPI_GetState(_LoRa->hSPIx) != HAL_SPI_STATE_READY)
 		;
 	HAL_GPIO_WritePin(_LoRa->CS_port, _LoRa->CS_pin, GPIO_PIN_SET);
+
 }
+
 
 /* ----------------------------------------------------------------------------- *\
 		name        : LoRa_writeReg
@@ -127,6 +130,8 @@ void LoRa_readReg(LoRa* _LoRa, uint8_t* address, uint16_t r_length, uint8_t* out
 
 		returns     : Nothing
 \* ----------------------------------------------------------------------------- */
+
+
 void LoRa_writeReg(LoRa* _LoRa, uint8_t* address, uint16_t r_length, uint8_t* values, uint16_t w_length){
 	HAL_GPIO_WritePin(_LoRa->CS_port, _LoRa->CS_pin, GPIO_PIN_RESET);
 	HAL_SPI_Transmit(_LoRa->hSPIx, address, r_length, TRANSMIT_TIMEOUT);
@@ -137,6 +142,7 @@ void LoRa_writeReg(LoRa* _LoRa, uint8_t* address, uint16_t r_length, uint8_t* va
 		;
 	HAL_GPIO_WritePin(_LoRa->CS_port, _LoRa->CS_pin, GPIO_PIN_SET);
 }
+
 
 /* ----------------------------------------------------------------------------- *\
 		name        : LoRa_setLowDaraRateOptimization
@@ -423,6 +429,8 @@ uint8_t LoRa_isvalid(LoRa* _LoRa){
 			uint16_t timeOut	--> Timeout in milliseconds
 		returns     : 1 in case of success, 0 in case of timeout
 \* ----------------------------------------------------------------------------- */
+
+
 uint8_t LoRa_transmit(LoRa* _LoRa, uint8_t* data, uint8_t length, uint16_t timeout){
 	uint8_t read;
 
@@ -449,6 +457,7 @@ uint8_t LoRa_transmit(LoRa* _LoRa, uint8_t* data, uint8_t length, uint16_t timeo
 		HAL_Delay(1);
 	}
 }
+
 
 /* ----------------------------------------------------------------------------- *\
 		name        : LoRa_startReceiving
@@ -619,6 +628,7 @@ void LoRa_transmit_error_pkg(LoRa* _LoRa, lora_package* transmission, MODULES* d
 	package_aux[2] = device_state->Esp32_State;
 	package_aux[3] = device_state->LoRa_State;
 	LoRa_transmit(_LoRa, package_aux, LORA_ERROR_PKG_SIZE, 500);  //Byte de ID, byte por dispositivo
+	print_debug("Error pkg sent\r\n");
 }
 
 void LoRa_transmit_scan_pkg(LoRa* _LoRa, lora_package* transmission, TX_TYPE transmission_type) {
@@ -634,7 +644,8 @@ void LoRa_transmit_scan_pkg(LoRa* _LoRa, lora_package* transmission, TX_TYPE tra
 		package_aux_alert[0] = transmission->baliza_id;
 		package_aux_alert[1] = transmission->status;
 		package_aux_alert[2] = transmission_type;
-		LoRa_transmit(_LoRa, package_aux_alert, LORA_ALERT_PKG_SIZE, 500);
+		LoRa_transmit(_LoRa, package_aux_alert, LORA_ALERT_PKG_SIZE, 1000);
+		print_debug("Alert pkg sent\r\n");
 	}
 
 	if (transmission_type == GPS) {
@@ -643,6 +654,7 @@ void LoRa_transmit_scan_pkg(LoRa* _LoRa, lora_package* transmission, TX_TYPE tra
 		package_aux_gps[2] = transmission_type;
 		//Faltan agregar los datos necesarios al struct, se implementa despues
 		LoRa_transmit(_LoRa, package_aux_gps, LORA_GPS_PKG_SIZE, 500);
+		print_debug("GPS pkg sent\r\n");
 	}
 
 	if (transmission_type == ENERGY) {
@@ -651,6 +663,7 @@ void LoRa_transmit_scan_pkg(LoRa* _LoRa, lora_package* transmission, TX_TYPE tra
 		package_aux_energy[2] = transmission_type;
 		//Faltan agregar los datos necesarios al struct, se implementa despues
 		LoRa_transmit(_LoRa, package_aux_energy, LORA_ENERGY_PKG_SIZE, 500);
+		print_debug("Energy pkg sent\r\n");
 	}
 }
 
@@ -670,4 +683,5 @@ void LoRa_transmit_triang_pkg(LoRa* _LoRa, lora_package* transmission) {
 		}
 	}
 	LoRa_transmit(_LoRa, package_aux, LORA_TRIANG_PKG_SIZE, 500);
+	print_debug("Triang pkg sent\r\n");
 }
