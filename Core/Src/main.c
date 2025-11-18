@@ -23,8 +23,8 @@
 /* USER CODE BEGIN Includes */
 #include <stdlib.h>
 #include "arm_math.h"
-#include "LoRa.h"
 #include "Esp32.h"
+#include "LoRa.h"
 #include <stdio.h>
 #include <string.h>
 /* USER CODE END Includes */
@@ -59,9 +59,8 @@ SPI_HandleTypeDef hspi1;
 TIM_HandleTypeDef htim3;
 
 /* USER CODE BEGIN PV */
-MODULES devices;
+HoneyComb_m honey_comb;
 LoRa myLoRa;
-lora_package tx_package;
 
 uint8_t rssi_index = 0;
 int8_t uart_rx_buffer[15];  			//[0xAA][rssi×13][CRC] Variable auxiliar
@@ -105,7 +104,7 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+ HAL_Init();
 
   /* USER CODE BEGIN Init */
 
@@ -132,45 +131,66 @@ int main(void)
   HAL_TIM_Base_Stop_IT(&htim3); 						//Solo se activa cuando las inicializaciones estan correctas
 	//LoRa MODULE Startup
 	myLoRa = newLoRa(); 								//Inicializa el modulo LoRa con las configuraciones cargadas
-	devices.LoRa_State = LoRa_connection(&myLoRa, &hspi1);
+	honey_comb.devices.LoRa_State = LoRa_connection(&myLoRa, &hspi1);
 	//ESP32 startup
-	devices.Esp32_State = esp32_connection(&huart4);
+	honey_comb.devices.Esp32_State = esp32_connection(&huart4);
 
-	 if (devices.LoRa_State || devices.Esp32_State) { 	//Aqui se agregan los demas para verificar error
-	     tx_package.status = NODE_ERROR;
-	     print_debug("ERROR: Init failed\r\n");
+	 if (honey_comb.devices.LoRa_State || honey_comb.devices.Esp32_State) { 	//Aqui se agregan los demas para verificar error
+		 honey_comb.status = NODE_ERROR;
+		 print_debug("ERROR: Init failed\r\n");
 	 }
 
+	 if(!honey_comb.devices.LoRa_State) {
+		 honey_comb.baliza_id = 65;													//Fijar ID por baliza, Baliza A, B y C...
+		 HAL_TIM_Base_Start_IT(&htim3);												//Empezamos el timer
+		 if(LoRa_Master_connection(&myLoRa, &honey_comb)) { 						//Si es true estamos conectados
+			 if(honey_comb.status == NODE_ERROR) { 									//Si hay conexion y algo falla se transmite
+				 LoRa_transmit_error_pkg(&myLoRa, &honey_comb);			//Envia el status de los devices para visualizar error en dashboard y central unit
+			 }
+			 //Funcionamiento correcto y deseado
+			 honey_comb.status = SCAN;
+			 honey_comb.transmission.transmission_type = ALERT;					//Inicio por defecto en ALERT
 
-
-	 if (!devices.LoRa_State && tx_package.status == NODE_ERROR) { 					//Error reportable al estar activo el LoRa
-		 LoRa_transmit_error_pkg(&myLoRa, &tx_package, &devices);					//Envia el status de los devices para visualizar error en dashboard y central unit
-	 } else if (devices.LoRa_State) { 												//CRITICAL ERROR, BUZZER ALERT
+			 HAL_UART_Receive_DMA(&huart4, uart_rx_buffer, 15);
+		 }
+		 else {
+			 print_debug("CRITICAL ERROR: HIVE MASTER NOT FOUND\r\n");
+			 print_debug("FINDING...");
+			 honey_comb.pending_tx = 1;
+		 }
+	 }
+	 else {
 		 print_debug("CRITICAL ERROR: LoRa failed\r\n");
-		 //Agregar funcion que hace ruido
+		 //Agregar funcion buzzer
 	 }
-
-	 if (tx_package.status != NODE_ERROR) {							//Si evoluciona bien, comienza scan
-	     tx_package.transmission_type = ALERT;					//Inicio por defecto en ALERT
-	     tx_package.baliza_id = 65; //Baliza A, B y C...		//Fijar ID por baliza
-
-	     HAL_TIM_Base_Start_IT(&htim3);
-	     HAL_UART_Receive_DMA(&huart4, uart_rx_buffer, 15);
-	 }
-
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-      if (tx_package.pending_tx) {
-          if (tx_package.status == TRIANGULATION) {
-              LoRa_transmit_triang_pkg(&myLoRa, &tx_package);
-          } else {
-              LoRa_transmit_scan_pkg(&myLoRa, &tx_package, tx_package.transmission_type);
+      if (honey_comb.pending_tx) {
+          if (honey_comb.status == TRIANGULATION) {
+              LoRa_transmit_triang_pkg(&myLoRa, &honey_comb);
           }
-          tx_package.pending_tx = 0;  //Limpiar flag
+          else if (honey_comb.status == SCAN) {
+              LoRa_transmit_scan_pkg(&myLoRa, &honey_comb);
+          }
+          else if (!honey_comb.master_acknowledge) { //Caso de pending ack
+  			honey_comb.master_acknowledge = LoRa_Master_connection(&myLoRa, &honey_comb);
+
+  			if (honey_comb.master_acknowledge) {
+  				if(honey_comb.status == NODE_ERROR) { 									//Si hay conexion y algo falla se transmite
+  					LoRa_transmit_error_pkg(&myLoRa, &honey_comb);			//Envia el status de los devices para visualizar error en dashboard y central unit
+  				}
+				 //Funcionamiento correcto y deseado
+				 honey_comb.status = SCAN;
+				 honey_comb.transmission.transmission_type = ALERT;					//Inicio por defecto en ALERT
+
+				 HAL_UART_Receive_DMA(&huart4, uart_rx_buffer, 15);
+  			}
+          }
+          honey_comb.pending_tx = 0;  //Limpiar flag
       }
     /* USER CODE END WHILE */
 
@@ -700,35 +720,41 @@ void new_rssi_load(int8_t* data, scan_t* history, uint8_t* index) {
 	*index = (*index + 1) % HISTORY_SIZE;
 }
 
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 	if (htim == &htim3) {
-		esp32_scan(&huart4); //Mandamos comando para escaneo
-		print_debug(">> SCAN REQUEST (350ms)\r\n"); //Debug quitar
+		if(honey_comb.master_acknowledge) {
+			esp32_scan(&huart4); //Mandamos comando para escaneo
+			print_debug(">> SCAN REQUEST (350ms)\r\n"); //Debug quitar
+		}
+		else { //Intenta recibir ack
+			print_debug("Finding...\r\n");
+			honey_comb.pending_tx = 1;
+		}
 	}
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 	if(huart == &huart4) {
-        if ((uint8_t)uart_rx_buffer[0] == ESP32_CHECK) {
+		if ((uint8_t)uart_rx_buffer[0] == ESP32_CHECK) {
 
-            if (uart_rx_buffer[14] != calculate_crc8(&uart_rx_buffer[1], 13)) { //Comparando el crc recibido con el calculado
-                print_debug("CRC ERROR - Descartando paquete\r\n");
-                HAL_UART_Receive_DMA(&huart4, uart_rx_buffer, 15);
-                return;  //No procesar datos corruptos
-            }
+			if (uart_rx_buffer[14] != calculate_crc8(&uart_rx_buffer[1], 13)) { //Comparando el crc recibido con el calculado
+				print_debug("CRC ERROR - Descartando paquete\r\n");
+				HAL_UART_Receive_DMA(&huart4, uart_rx_buffer, 15);
+				return;  //No procesar datos corruptos
+			}
 
-        	//Quitar debug
-            char debug[80];
-            sprintf(debug, "RX[%d]: CH1=%d CH7=%d CH13=%d\r\n",
-                rssi_index, uart_rx_buffer[1], uart_rx_buffer[7], uart_rx_buffer[13]);
-            print_debug(debug);
+			//Quitar debug
+			char debug[80];
+			sprintf(debug, "RX[%d]: CH1=%d CH7=%d CH13=%d\r\n",
+				rssi_index, uart_rx_buffer[1], uart_rx_buffer[7], uart_rx_buffer[13]);
+			print_debug(debug);
 
-            //Guardar en histórico y avanza el indice
-            new_rssi_load(&uart_rx_buffer[1], tx_package.rssi_buffer, &rssi_index);
+			//Guardar en histórico y avanza el indice
+			new_rssi_load(&uart_rx_buffer[1], honey_comb.transmission.rssi_buffer, &rssi_index);
 
 
-            //Deteccion
-			if (detect_drone(tx_package.rssi_buffer)) {
+			//Deteccion
+			if (detect_drone(honey_comb.transmission.rssi_buffer)) {
 				if (drone_alert_counter < HISTORY_SIZE) {
 				  drone_alert_counter++;
 				}
@@ -742,36 +768,21 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 				print_debug("No drone signal\r\n"); 							//Debug
 				drone_alert_counter = 0;
 
-			    if (tx_package.status == TRIANGULATION) { 						//En caso de perdida
-			        print_debug("!!! DRONE LOST !!!\r\n");
-			        tx_package.status = SCAN;
-			    }
+				if (honey_comb.status == TRIANGULATION) { 						//En caso de perdida
+					print_debug("!!! DRONE LOST !!!\r\n");
+					honey_comb.status = SCAN;
+				}
 			}
 																				//Perdida de dron
-			if (drone_alert_counter >= HISTORY_SIZE && tx_package.status != TRIANGULATION) {
+			if (drone_alert_counter >= HISTORY_SIZE && honey_comb.status != TRIANGULATION) {
 				print_debug("!!! DRONE DETECTED !!!\r\n");
-		        tx_package.transmission_type = ALERT;
-		        tx_package.status = DETECTION; 									//Paso previo al triangulation, manda alerta y espera acknowledge
+				honey_comb.transmission.transmission_type = ALERT;
+				honey_comb.status = DETECTION; 									//Paso previo al triangulation, manda alerta y espera acknowledge
 			}
-			tx_package.pending_tx = 1;											//Flag de tranmisión
-        }
-        HAL_UART_Receive_DMA(&huart4, uart_rx_buffer, 15); 						//Reactivamos la recepcion por DMA
+			honey_comb.pending_tx = 1;											//Flag de tranmisión
+		}
+		HAL_UART_Receive_DMA(&huart4, uart_rx_buffer, 15); 						//Reactivamos la recepcion por DMA
 	}
-}
-
-
-void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin) {
-    if (GPIO_Pin == LoRa_IRQ_Pin) {
-        //Solo transmitir si hay datos pendientes
-        if (tx_package.pending_tx) {
-            if (tx_package.status == TRIANGULATION) {
-                LoRa_transmit_triang_pkg(&myLoRa, &tx_package);
-            } else {
-                LoRa_transmit_scan_pkg(&myLoRa, &tx_package, tx_package.transmission_type);
-            }
-            tx_package.pending_tx = 0;  //Limpiar flag
-        }
-    }
 }
 
 
