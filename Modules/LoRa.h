@@ -137,7 +137,8 @@ int LoRa_getRSSI(LoRa* _LoRa);
 uint16_t LoRa_init(LoRa* _LoRa);
 uint8_t LoRa_connection(LoRa* _LoRa, SPI_HandleTypeDef* _hSPIx); 								//Funcion creada para iniciar y verificar LoRa
 
-uint8_t LoRa_Master_connection(LoRa* _LoRa, HoneyComb_m* honey_comb);
+uint8_t LoRa_receive_no_mode_change(LoRa* _LoRa, uint8_t* data, uint8_t length);
+uint8_t LoRa_Master_connection(LoRa* _LoRa, HoneyComb_m* honey_comb, osSemaphoreId_t loraRxSemHandle);
 void LoRa_transmit_error_pkg(LoRa* _LoRa, HoneyComb_m* honey_comb);
 void LoRa_transmit_scan_pkg(LoRa* _LoRa, HoneyComb_m* honey_comb);
 void LoRa_transmit_triang_pkg(LoRa* _LoRa, HoneyComb_m* honey_comb);

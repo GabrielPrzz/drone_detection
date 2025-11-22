@@ -10,26 +10,25 @@
 uint8_t esp32_connection(UART_HandleTypeDef* _uart) {
     uint8_t response = 0;
     uint8_t check_msg = ESP32_CHECK;
+    uint8_t retries = 3;
 
-    //Despertar ESP32
-    HAL_GPIO_WritePin(ESP32_WKP_GPIO_Port, ESP32_WKP_Pin, GPIO_PIN_SET);
-    HAL_Delay(5);
-    HAL_GPIO_WritePin(ESP32_WKP_GPIO_Port, ESP32_WKP_Pin, GPIO_PIN_RESET);
+    while(retries--) {
+        HAL_GPIO_WritePin(ESP32_WKP_GPIO_Port, ESP32_WKP_Pin, GPIO_PIN_SET);
+        HAL_Delay(5);
+        HAL_GPIO_WritePin(ESP32_WKP_GPIO_Port, ESP32_WKP_Pin, GPIO_PIN_RESET);
+        HAL_Delay(30);
 
-    HAL_Delay(30); //PARA QUE PUEDA DESPERTAR
+        HAL_UART_Transmit(_uart, &check_msg, 1, 100);
 
-    //Enviar CHECK
-    HAL_UART_Transmit(_uart, &check_msg, 1, 100);
-
-    //Esperar ACK
-    if (HAL_UART_Receive(_uart, &response, 1, 2000) == HAL_OK) {
-        if(response == ESP32_ACK) {
-        	HAL_UART_AbortReceive(_uart);
-        	HAL_Delay(10);
-        	return 0;
+        if (HAL_UART_Receive(_uart, &response, 1, 2000) == HAL_OK) {
+            if(response == ESP32_ACK) {
+                HAL_UART_AbortReceive(_uart);
+                HAL_Delay(10);
+                return 0;
+            }
         }
+        HAL_UART_AbortReceive(_uart);
     }
-    HAL_UART_AbortReceive(_uart);
     return 1;
 }
 

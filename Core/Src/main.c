@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "cmsis_os2.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -36,7 +37,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define BALIZA_ID 65
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -64,11 +65,16 @@ LoRa myLoRa;
 
 uint8_t rssi_index = 0;
 int8_t uart_rx_buffer[15];  			//[0xAA][rssi×13][CRC] Variable auxiliar
-uint8_t drone_alert_counter = 0;
+
+extern osSemaphoreId_t uart4RxSemHandle;
+extern osSemaphoreId_t tim3SemHandle;
+extern osSemaphoreId_t loraRxSemHandle;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
+void MX_FREERTOS_Init(void);
 static void MX_GPIO_Init(void);
 static void MX_GPDMA1_Init(void);
 static void MX_ADC1_Init(void);
@@ -80,6 +86,7 @@ static void MX_TIM3_Init(void);
 static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 void print_debug(const char *msg);
+void print_debug_F(const char *msg);
 void new_rssi_load(int8_t* data, scan_t* history, uint8_t* index);
 uint8_t detect_drone(scan_t* history);
 
@@ -104,7 +111,7 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
- HAL_Init();
+  HAL_Init();
 
   /* USER CODE BEGIN Init */
 
@@ -138,60 +145,37 @@ int main(void)
 	 if (honey_comb.devices.LoRa_State || honey_comb.devices.Esp32_State) { 	//Aqui se agregan los demas para verificar error
 		 honey_comb.status = NODE_ERROR;
 		 print_debug("ERROR: Init failed\r\n");
+	 } else {
+		 honey_comb.status = INITIALIZATION;
 	 }
 
 	 if(!honey_comb.devices.LoRa_State) {
-		 honey_comb.baliza_id = 65;													//Fijar ID por baliza, Baliza A, B y C...
-		 HAL_TIM_Base_Start_IT(&htim3);												//Empezamos el timer
-		 if(LoRa_Master_connection(&myLoRa, &honey_comb)) { 						//Si es true estamos conectados
-			 if(honey_comb.status == NODE_ERROR) { 									//Si hay conexion y algo falla se transmite
-				 LoRa_transmit_error_pkg(&myLoRa, &honey_comb);			//Envia el status de los devices para visualizar error en dashboard y central unit
-			 }
-			 //Funcionamiento correcto y deseado
-			 honey_comb.status = SCAN;
-			 honey_comb.transmission.transmission_type = ALERT;					//Inicio por defecto en ALERT
-
-			 HAL_UART_Receive_DMA(&huart4, uart_rx_buffer, 15);
-		 }
-		 else {
-			 print_debug("CRITICAL ERROR: HIVE MASTER NOT FOUND\r\n");
-			 print_debug("FINDING...");
-			 honey_comb.pending_tx = 1;
-		 }
+		 honey_comb.baliza_id = BALIZA_ID;								//Fijar ID por baliza, Baliza A, B y C...
+		 honey_comb.master_acknowledge = 0;
+		 honey_comb.transmission.transmission_type = ALERT;
+		 print_debug_F("INIT SUCCESS\r\n");
 	 }
 	 else {
-		 print_debug("CRITICAL ERROR: LoRa failed\r\n");
+		 print_debug_F("CRITICAL ERROR: LoRa failed\r\n");
 		 //Agregar funcion buzzer
 	 }
+
   /* USER CODE END 2 */
+
+  /* Init scheduler */
+  osKernelInitialize();
+  /* Call init function for freertos objects (in app_freertos.c) */
+  MX_FREERTOS_Init();
+
+  /* Start scheduler */
+  osKernelStart();
+
+  /* We should never get here as control is now taken by the scheduler */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-      if (honey_comb.pending_tx) {
-          if (honey_comb.status == TRIANGULATION) {
-              LoRa_transmit_triang_pkg(&myLoRa, &honey_comb);
-          }
-          else if (honey_comb.status == SCAN) {
-              LoRa_transmit_scan_pkg(&myLoRa, &honey_comb);
-          }
-          else if (!honey_comb.master_acknowledge) { //Caso de pending ack
-  			honey_comb.master_acknowledge = LoRa_Master_connection(&myLoRa, &honey_comb);
-
-  			if (honey_comb.master_acknowledge) {
-  				if(honey_comb.status == NODE_ERROR) { 									//Si hay conexion y algo falla se transmite
-  					LoRa_transmit_error_pkg(&myLoRa, &honey_comb);			//Envia el status de los devices para visualizar error en dashboard y central unit
-  				}
-				 //Funcionamiento correcto y deseado
-				 honey_comb.status = SCAN;
-				 honey_comb.transmission.transmission_type = ALERT;					//Inicio por defecto en ALERT
-
-				 HAL_UART_Receive_DMA(&huart4, uart_rx_buffer, 15);
-  			}
-          }
-          honey_comb.pending_tx = 0;  //Limpiar flag
-      }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -334,7 +318,7 @@ static void MX_GPDMA1_Init(void)
   __HAL_RCC_GPDMA1_CLK_ENABLE();
 
   /* GPDMA1 interrupt Init */
-    HAL_NVIC_SetPriority(GPDMA1_Channel1_IRQn, 0, 0);
+    HAL_NVIC_SetPriority(GPDMA1_Channel1_IRQn, 5, 0);
     HAL_NVIC_EnableIRQ(GPDMA1_Channel1_IRQn);
 
   /* USER CODE BEGIN GPDMA1_Init 1 */
@@ -599,7 +583,6 @@ static void MX_TIM3_Init(void)
 
   TIM_ClockConfigTypeDef sClockSourceConfig = {0};
   TIM_MasterConfigTypeDef sMasterConfig = {0};
-  TIM_OC_InitTypeDef sConfigOC = {0};
 
   /* USER CODE BEGIN TIM3_Init 1 */
 
@@ -619,21 +602,9 @@ static void MX_TIM3_Init(void)
   {
     Error_Handler();
   }
-  if (HAL_TIM_OC_Init(&htim3) != HAL_OK)
-  {
-    Error_Handler();
-  }
   sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
   sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
   if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sConfigOC.OCMode = TIM_OCMODE_TIMING;
-  sConfigOC.Pulse = 0;
-  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-  if (HAL_TIM_OC_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
   {
     Error_Handler();
   }
@@ -691,10 +662,10 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI8_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(EXTI8_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(EXTI8_IRQn);
 
-  HAL_NVIC_SetPriority(EXTI13_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(EXTI13_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(EXTI13_IRQn);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
@@ -703,90 +674,54 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-
+void print_debug_F(const char *msg) {
+    HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+}
 
 uint8_t detect_drone(scan_t* history) { //Falta implementar detección
 	return 1;
 }
 
-
-
-void print_debug(const char *msg) { //Funcion de debuggeo, posterior eliminación
-    HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
-}
-
-void new_rssi_load(int8_t* data, scan_t* history, uint8_t* index) {
-	memcpy(history[*index].rssi, data, RSSI_BUFFER_SIZE);
-	*index = (*index + 1) % HISTORY_SIZE;
-}
-
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
-	if (htim == &htim3) {
-		if(honey_comb.master_acknowledge) {
-			esp32_scan(&huart4); //Mandamos comando para escaneo
-			print_debug(">> SCAN REQUEST (350ms)\r\n"); //Debug quitar
-		}
-		else { //Intenta recibir ack
-			print_debug("Finding...\r\n");
-			honey_comb.pending_tx = 1;
-		}
-	}
-}
-
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 	if(huart == &huart4) {
-		if ((uint8_t)uart_rx_buffer[0] == ESP32_CHECK) {
-
-			if (uart_rx_buffer[14] != calculate_crc8(&uart_rx_buffer[1], 13)) { //Comparando el crc recibido con el calculado
-				print_debug("CRC ERROR - Descartando paquete\r\n");
-				HAL_UART_Receive_DMA(&huart4, uart_rx_buffer, 15);
-				return;  //No procesar datos corruptos
-			}
-
-			//Quitar debug
-			char debug[80];
-			sprintf(debug, "RX[%d]: CH1=%d CH7=%d CH13=%d\r\n",
-				rssi_index, uart_rx_buffer[1], uart_rx_buffer[7], uart_rx_buffer[13]);
-			print_debug(debug);
-
-			//Guardar en histórico y avanza el indice
-			new_rssi_load(&uart_rx_buffer[1], honey_comb.transmission.rssi_buffer, &rssi_index);
-
-
-			//Deteccion
-			if (detect_drone(honey_comb.transmission.rssi_buffer)) {
-				if (drone_alert_counter < HISTORY_SIZE) {
-				  drone_alert_counter++;
-				}
-				sprintf(debug, "ALERT: Counter=%d\r\n", drone_alert_counter); 	//Debug
-				print_debug(debug);
-			} else if (drone_alert_counter > 0) { 								//Forma estricta de tratar falsos positivos
-				drone_alert_counter = 0;
-				sprintf(debug, "ALERT: Counter=%d\r\n", drone_alert_counter); 	//Debug
-				print_debug(debug);
-			} else { 															//No captamos nada
-				print_debug("No drone signal\r\n"); 							//Debug
-				drone_alert_counter = 0;
-
-				if (honey_comb.status == TRIANGULATION) { 						//En caso de perdida
-					print_debug("!!! DRONE LOST !!!\r\n");
-					honey_comb.status = SCAN;
-				}
-			}
-																				//Perdida de dron
-			if (drone_alert_counter >= HISTORY_SIZE && honey_comb.status != TRIANGULATION) {
-				print_debug("!!! DRONE DETECTED !!!\r\n");
-				honey_comb.transmission.transmission_type = ALERT;
-				honey_comb.status = DETECTION; 									//Paso previo al triangulation, manda alerta y espera acknowledge
-			}
-			honey_comb.pending_tx = 1;											//Flag de tranmisión
-		}
-		HAL_UART_Receive_DMA(&huart4, uart_rx_buffer, 15); 						//Reactivamos la recepcion por DMA
+		osSemaphoreRelease(uart4RxSemHandle);
+		print_debug_F("UART4_RX callback\r\n");
 	}
 }
 
 
+void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin) {
+	if (GPIO_Pin == LoRa_IRQ_Pin) {
+		osSemaphoreRelease(loraRxSemHandle);
+		print_debug_F("LORA_RX callback\r\n");
+	}
+}
+
 /* USER CODE END 4 */
+
+/**
+  * @brief  Period elapsed callback in non blocking mode
+  * @note   This function is called  when TIM15 interrupt took place, inside
+  * HAL_TIM_IRQHandler(). It makes a direct call to HAL_IncTick() to increment
+  * a global variable "uwTick" used as application time base.
+  * @param  htim : TIM handle
+  * @retval None
+  */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  /* USER CODE BEGIN Callback 0 */
+	if(htim == &htim3) {
+		osSemaphoreRelease(tim3SemHandle);
+	}
+  /* USER CODE END Callback 0 */
+  if (htim->Instance == TIM15)
+  {
+    HAL_IncTick();
+  }
+  /* USER CODE BEGIN Callback 1 */
+
+  /* USER CODE END Callback 1 */
+}
 
 /**
   * @brief  This function is executed in case of error occurrence.
