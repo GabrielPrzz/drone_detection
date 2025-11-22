@@ -147,13 +147,13 @@ int main(void)
 		 print_debug("ERROR: Init failed\r\n");
 	 } else {
 		 honey_comb.status = INITIALIZATION;
+		 print_debug_F("INIT SUCCESS\r\n");
 	 }
 
 	 if(!honey_comb.devices.LoRa_State) {
 		 honey_comb.baliza_id = BALIZA_ID;								//Fijar ID por baliza, Baliza A, B y C...
 		 honey_comb.master_acknowledge = 0;
 		 honey_comb.transmission.transmission_type = ALERT;
-		 print_debug_F("INIT SUCCESS\r\n");
 	 }
 	 else {
 		 print_debug_F("CRITICAL ERROR: LoRa failed\r\n");

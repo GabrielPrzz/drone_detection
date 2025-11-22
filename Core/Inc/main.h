@@ -100,8 +100,9 @@ typedef struct {
 	float_t DischargeRate;
 } energy_t;
 
-typedef struct {						//Falta modificar
-    uint8_t latitude;
+typedef struct {
+	float_t latitude;
+	float_t longitude;
 } gps_t;
 
 typedef struct {

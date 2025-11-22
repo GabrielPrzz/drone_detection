@@ -349,10 +349,11 @@ void StartTask04(void *argument)
 		        esp32_scan(&huart4);
 		        print_debug("SCAN\r\n");
 	    	}
-	    } else {
-	        print_debug("Finding...\r\n");
-	        cmd = 2;
-	        osMessageQueuePut(loraQueueHandle, &cmd, 0, 0);
+	    }
+	    else {
+			print_debug("Finding...\r\n");
+			cmd = 2;
+			osMessageQueuePut(loraQueueHandle, &cmd, 0, 0);
 	    }
   }
   /* USER CODE END Timing_Task */
