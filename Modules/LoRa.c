@@ -639,7 +639,8 @@ uint8_t LoRa_connection(LoRa* _LoRa, SPI_HandleTypeDef* _hSPIx) { //Mi config
 	return 0; //Se inicializo bien
 }
 
-
+/*
+//RTOS FUNCTION
 uint8_t LoRa_Master_connection(LoRa* _LoRa, HoneyComb_m* honey_comb, osSemaphoreId_t loraRxSemHandle) {
 	uint8_t package_aux[LORA_ACK_PKG_SIZE];
 	uint8_t ack_reception[LORA_ACK_PKG_SIZE];
@@ -647,17 +648,17 @@ uint8_t LoRa_Master_connection(LoRa* _LoRa, HoneyComb_m* honey_comb, osSemaphore
 	package_aux[0] = honey_comb->baliza_id;
 	package_aux[1] = honey_comb->status;
 
-	// Transmitir
+	//Transmitir
 	LoRa_transmit(_LoRa, package_aux, LORA_ACK_PKG_SIZE, 200);
 	print_debug("ACK sent\r\n");
 
-	// ANTES de recibir: configurar modo RXSINGLE
+	//ANTES de recibir: configurar modo RXSINGLE
 	LoRa_gotoMode(_LoRa, RXSINGLE_MODE);
 	osDelay(10);
 
-	// Esperar interrupción con timeout
+	//Esperar interrupción con timeout
 	if (osSemaphoreAcquire(loraRxSemHandle, 1000) == osOK) {
-		// La interrupción se disparó = hay dato
+		//La interrupción se disparó = hay dato
 		uint8_t num_bytes = LoRa_receive_no_mode_change(_LoRa, ack_reception, LORA_ACK_PKG_SIZE);
 
 		if (num_bytes > 0 && ack_reception[0] == honey_comb->baliza_id && ack_reception[1] == 0xAA) {
@@ -670,8 +671,22 @@ uint8_t LoRa_Master_connection(LoRa* _LoRa, HoneyComb_m* honey_comb, osSemaphore
 	LoRa_gotoMode(_LoRa, SLEEP_MODE);
 	return 0;
 }
+*/
 
+uint8_t LoRa_Master_connection(LoRa* _LoRa, HoneyComb_m* honey_comb) {
+	uint8_t package_aux[LORA_ACK_PKG_SIZE];
 
+	package_aux[0] = honey_comb->baliza_id;
+	package_aux[1] = honey_comb->status;
+
+	//Transmitir
+	LoRa_transmit(_LoRa, package_aux, LORA_ACK_PKG_SIZE, 200);
+	print_debug("ACK sent\r\n");
+
+	//ANTES de recibir: configurar modo RXSINGLE
+	LoRa_gotoMode(_LoRa, RXSINGLE_MODE);
+	HAL_Delay(10);
+}
 
 void LoRa_transmit_error_pkg(LoRa* _LoRa, HoneyComb_m* honey_comb) {
 	//Formato bytes-->|ID|STATUS|ESP32_STATE|LORA_STATE|GPS_STATE|UNIT_STATE|MICRO_STATE|
@@ -688,57 +703,68 @@ void LoRa_transmit_error_pkg(LoRa* _LoRa, HoneyComb_m* honey_comb) {
 	print_debug("Error pkg sent\r\n");
 }
 
-void LoRa_transmit_scan_pkg(LoRa* _LoRa, HoneyComb_m* honey_comb) {
+void LoRa_transmit_alert_pkg(LoRa* _LoRa, HoneyComb_m* honey_comb) {
 	//Formato bytes-->|ID|STATUS|TX_TYPE|
 	uint8_t package_aux_alert[LORA_ALERT_PKG_SIZE];
-	//Formato bytes-->|ID|STATUS|TX_TYPE|LAT1|LAT2|LAT3|LAT4|LON1|LON2|LON3|LON4|TIM1|TIM2|TIM3|TIM4|
-	uint8_t package_aux_gps[LORA_GPS_PKG_SIZE];
-	//Formato bytes-->|ID|STATUS|TX_TYPE|VOLTAGE|PERCENTAGE|RATE_OF_DISCHARGE|
-	uint8_t package_aux_energy[LORA_ENERGY_PKG_SIZE];
-
-
-	if((honey_comb->status == DETECTION || honey_comb->status == SLEEP_INCOMING) && (honey_comb->transmission.transmission_type == ALERT)) { //Debe tener ambas flags activas por el main para ejecutar
+	if((honey_comb->status == DETECTION || honey_comb->status == SLEEPING) && (honey_comb->transmission.transmission_type == ALERT)) { //Debe tener ambas flags activas por el main para ejecutar
 		package_aux_alert[0] = honey_comb->baliza_id;
 		package_aux_alert[1] = honey_comb->status;
 		package_aux_alert[2] = honey_comb->transmission.transmission_type;
-		LoRa_transmit(_LoRa, package_aux_alert, LORA_ALERT_PKG_SIZE, 1000);
+		LoRa_transmit(_LoRa, package_aux_alert, LORA_ALERT_PKG_SIZE, 500);
 		print_debug("Alert pkg sent\r\n");
 	}
+}
 
-	if (honey_comb->transmission.transmission_type == GPS) {
-		package_aux_gps[0] = honey_comb->baliza_id;
-		package_aux_gps[1] = honey_comb->status;
-		package_aux_gps[2] = honey_comb->transmission.transmission_type;
-		//Faltan agregar los datos necesarios al struct, se implementa despues
-		LoRa_transmit(_LoRa, package_aux_gps, LORA_GPS_PKG_SIZE, 500);
-		print_debug("GPS pkg sent\r\n");
-	}
-
+void LoRa_transmit_energy_pkg(LoRa* _LoRa, HoneyComb_m* honey_comb) {
+	//Formato bytes-->|ID|STATUS|TX_TYPE|VOLTAGE|PERCENTAGE|RATE_OF_DISCHARGE|
+	uint8_t package_aux_energy[LORA_ENERGY_PKG_SIZE];
 	if (honey_comb->transmission.transmission_type == ENERGY) {
 		package_aux_energy[0] = honey_comb->baliza_id;
 		package_aux_energy[1] = honey_comb->status;
 		package_aux_energy[2] = honey_comb->transmission.transmission_type;
-		//Faltan agregar los datos necesarios al struct, se implementa despues
+
+		//por tener 32 bits
+		memcpy(&package_aux_energy[3], &honey_comb->transmission.energy_data.Voltage, 4);
+		memcpy(&package_aux_energy[7], &honey_comb->transmission.energy_data.Percentage, 4);
+		memcpy(&package_aux_energy[11], &honey_comb->transmission.energy_data.DischargeRate, 4);
+
 		LoRa_transmit(_LoRa, package_aux_energy, LORA_ENERGY_PKG_SIZE, 500);
 		print_debug("Energy pkg sent\r\n");
 	}
 }
 
+void LoRa_transmit_gps_pkg(LoRa* _LoRa, HoneyComb_m* honey_comb) {
+	//Formato bytes-->|ID|STATUS|TX_TYPE|LAT|LONG|
+	uint8_t package_aux_gps[LORA_GPS_PKG_SIZE];
+	if (honey_comb->transmission.transmission_type == GPS) {
+		package_aux_gps[0] = honey_comb->baliza_id;
+		package_aux_gps[1] = honey_comb->status;
+		package_aux_gps[2] = honey_comb->transmission.transmission_type;
+
+		memcpy(&package_aux_gps[3], &honey_comb->transmission.location_data.latitude, 4); //por tener 32 bits
+		memcpy(&package_aux_gps[7], &honey_comb->transmission.location_data.longitude, 4);
+
+		LoRa_transmit(_LoRa, package_aux_gps, LORA_GPS_PKG_SIZE, 500);
+		print_debug("GPS pkg sent\r\n");
+	}
+}
+
+
+
 void LoRa_transmit_triang_pkg(LoRa* _LoRa, HoneyComb_m* honey_comb) {
-	//Formato bytes-->|ID|STATUS|ESP32_STATE|LORA_STATE|GPS_STATE|UNIT_STATE|MICRO_STATE|
-	uint8_t package_aux[LORA_TRIANG_PKG_SIZE]; //Cambiar por define con 4 veces buffer_size
+	//Formato bytes-->|ID|STATUS|13RSSI[0]| 		Enviamos nuestra ultima lectura RSSI
+	uint8_t package_aux[LORA_TRIANG_PKG_SIZE];
+	uint8_t aux_index;
 
 	package_aux[0] = honey_comb->baliza_id;
 	package_aux[1] = honey_comb->status;
+	aux_index = 2;
 
-	uint8_t aux_index = 2;
-
-	for (uint8_t i=0; i < HISTORY_SIZE; i++) {
-		for (uint8_t j=0; j < RSSI_BUFFER_SIZE; j++) {
-			package_aux[aux_index] = (uint8_t)honey_comb->transmission.rssi_buffer[i].rssi[j];  //Datos casteados para enviar
-			aux_index++;
-		}
+	for (uint8_t i=0; i < RSSI_BUFFER_SIZE; i++) {
+		package_aux[aux_index] = (uint8_t)honey_comb->transmission.rssi_buffer[0].rssi[i];  //Datos casteados para enviar
+		aux_index++;
 	}
+
 	LoRa_transmit(_LoRa, package_aux, LORA_TRIANG_PKG_SIZE, 500);
 	print_debug("Triang pkg sent\r\n");
 }

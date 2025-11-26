@@ -81,12 +81,12 @@
 
 // Transmission limits
 #define LORA_MAX_SIZE 			64
-#define LORA_ACK_PKG_SIZE		2
+#define LORA_ACK_PKG_SIZE		3	//|ID|OxAA|role|
 #define LORA_ERROR_PKG_SIZE		6
-#define LORA_ENERGY_PKG_SIZE	6
+#define LORA_ENERGY_PKG_SIZE	15
 #define LORA_ALERT_PKG_SIZE		5
-#define LORA_GPS_PKG_SIZE		15	//Falta por cambiar
-#define LORA_TRIANG_PKG_SIZE 	54 	//Contemplando ID y status
+#define LORA_GPS_PKG_SIZE		11
+#define LORA_TRIANG_PKG_SIZE 	15
 
 typedef struct LoRa_setting{
 	// Hardware setings:
@@ -138,7 +138,9 @@ uint16_t LoRa_init(LoRa* _LoRa);
 uint8_t LoRa_connection(LoRa* _LoRa, SPI_HandleTypeDef* _hSPIx); 								//Funcion creada para iniciar y verificar LoRa
 
 uint8_t LoRa_receive_no_mode_change(LoRa* _LoRa, uint8_t* data, uint8_t length);
-uint8_t LoRa_Master_connection(LoRa* _LoRa, HoneyComb_m* honey_comb, osSemaphoreId_t loraRxSemHandle);
+uint8_t LoRa_Master_connection(LoRa* _LoRa, HoneyComb_m* honey_comb);
 void LoRa_transmit_error_pkg(LoRa* _LoRa, HoneyComb_m* honey_comb);
-void LoRa_transmit_scan_pkg(LoRa* _LoRa, HoneyComb_m* honey_comb);
+void LoRa_transmit_alert_pkg(LoRa* _LoRa, HoneyComb_m* honey_comb);
+void LoRa_transmit_energy_pkg(LoRa* _LoRa, HoneyComb_m* honey_comb);
+void LoRa_transmit_gps_pkg(LoRa* _LoRa, HoneyComb_m* honey_comb);
 void LoRa_transmit_triang_pkg(LoRa* _LoRa, HoneyComb_m* honey_comb);

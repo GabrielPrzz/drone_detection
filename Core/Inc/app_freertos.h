@@ -55,17 +55,30 @@ extern "C" {
 
 /* USER CODE END EM */
 extern osThreadId_t defaultTaskHandle;
-extern osThreadId_t ESP32_CommHandle;
-extern osThreadId_t LoRa_taskHandle;
-extern osThreadId_t Timing_TaskHandle;
+extern osThreadId_t ESP32_TaskHandle;
+extern osThreadId_t LoRa_TaskHandle;
+extern osThreadId_t Battery_TaskHandle;
+extern osThreadId_t GPS_TaskHandle;
+extern osThreadId_t DetectionTaskHandle;
+extern osThreadId_t LoRa_Rx_TaskHandle;
+extern osThreadId_t SleepTaskHandle;
 extern osMutexId_t rssiMutexHandle;
 extern osMutexId_t loraMutexHandle;
 extern osMutexId_t honeyCombMutexHandle;
 extern osMutexId_t printUartMutexHandle;
 extern osMessageQueueId_t loraQueueHandle;
+extern osMessageQueueId_t scoreQueueHandle;
 extern osSemaphoreId_t tim3SemHandle;
 extern osSemaphoreId_t uart4RxSemHandle;
 extern osSemaphoreId_t loraRxSemHandle;
+extern osSemaphoreId_t gpsSemHandle;
+extern osSemaphoreId_t chargerSemHandle;
+extern osSemaphoreId_t i2c2RxSemHandle;
+extern osSemaphoreId_t lpuart1RxSemHandle;
+extern osSemaphoreId_t newRssiSemHandle;
+extern osSemaphoreId_t sleepAckSemHandle;
+extern osSemaphoreId_t sleepSemHandle;
+extern osSemaphoreId_t wkpCmdSemHandle;
 
 /* Exported function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
@@ -73,9 +86,13 @@ extern osSemaphoreId_t loraRxSemHandle;
 /* USER CODE END FunctionPrototypes */
 
 void StartDefaultTask(void *argument);
-void StartTask02(void *argument);
-void StartTask03(void *argument);
-void StartTask04(void *argument);
+void ESP32_Task(void *argument);
+void LoRa_Task(void *argument);
+void Battery_Task(void *argument);
+void GPS_Task(void *argument);
+void DetectionTask(void *argument);
+void LoRa_Rx_Task(void *argument);
+void SleepTask(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 

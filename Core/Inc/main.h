@@ -28,9 +28,12 @@ extern "C" {
 
 /* Includes ------------------------------------------------------------------*/
 #include "stm32h5xx_hal.h"
-#include "cmsis_os2.h"
+
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "cmsis_os2.h"
+#include <string.h>
+
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
@@ -71,7 +74,7 @@ void Error_Handler(void);
 
 /* USER CODE BEGIN Private defines */
 #define RSSI_BUFFER_SIZE 		13
-#define HISTORY_SIZE 			4
+#define HISTORY_SIZE 			6
 #define LORA_MAX_SIZE 			64
 
 typedef enum {
@@ -79,9 +82,9 @@ typedef enum {
 	NODE_ERROR,							//Alguno de los modulos, ajeno al LoRa fallo o no esta funcionando correctamente
 	SCAN,								//Solo escanendo el ambiente pero sin detectar nada todavia, funcionamiento normal
 	DETECTION,							//ALERTA previa a la triangulación, central debe confirmar recepcion de la alerta
-	TRIANGULATION,						//DRON DETECTADO y se estan mandando datos para la triangulacion
-	SLEEP_INCOMING,						//SLEEP INCOMING ALERTA
-	SLEEPING,
+	TRIANGULATION,						//DRON DETECTADO y se estan mandando datos para la triangulacion, NECESITA ACK DE CENTRAL ANTES DE ENTRAR
+	DRONE_LOST,
+	SLEEPING,							//NECESITA ACK DE CENTRAL ANTES DE ENTRAR
 } BALIZA_STATE;
 
 typedef enum {							//Señales que avisan que tipo de dato mandamos
@@ -89,6 +92,11 @@ typedef enum {							//Señales que avisan que tipo de dato mandamos
 	GPS,
 	ALERT,
 } TX_TYPE;
+
+typedef enum {
+	detector,
+	aux,
+} system_role;
 
 typedef struct {
     int8_t rssi[RSSI_BUFFER_SIZE]; 		//Este rssi sirve para detectar dron
@@ -129,7 +137,7 @@ typedef struct {
 	lora_package transmission;			//Variable utilizada para transmitir data
 	MODULES devices;					//Variable que almacena el estado de los modulos conectados
 
-	uint8_t pending_tx;					//Indica si hay una transmisión pendiente, flag interna del device
+	system_role node_role;
 	uint8_t master_acknowledge;
 } HoneyComb_m;
 /* USER CODE END Private defines */

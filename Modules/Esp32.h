@@ -15,6 +15,7 @@
 #define ESP32_SCAN_CMD		0xCC //Comando para escaneo
 
 uint8_t esp32_connection(UART_HandleTypeDef* _uart);
+void esp32_wkp(UART_HandleTypeDef* _uart);
 void esp32_scan(UART_HandleTypeDef* _uart);
 uint8_t calculate_crc8(int8_t *data, uint8_t len);
 
