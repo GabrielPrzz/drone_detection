@@ -75,7 +75,15 @@ void Error_Handler(void);
 /* USER CODE BEGIN Private defines */
 #define RSSI_BUFFER_SIZE 		13
 #define HISTORY_SIZE 			6
+
 #define LORA_MAX_SIZE 			64
+#define LORA_MASTER_CONNECTION_PKG_SIZE 2
+#define LORA_ACK_PKG_SIZE		3	//|ID|OxAA|role|
+#define LORA_ERROR_PKG_SIZE		7
+#define LORA_ENERGY_PKG_SIZE	15
+#define LORA_ALERT_PKG_SIZE		3
+#define LORA_GPS_PKG_SIZE		11
+#define LORA_TRIANG_PKG_SIZE 	15
 
 typedef enum {
 	INITIALIZATION,

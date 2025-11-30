@@ -41,14 +41,11 @@
 /* USER CODE BEGIN PD */
 #define DETECTION_THRESHOLD 60
 
-#define CENTRAL_SLEEP_CMD 0xA0
-#define SLEEP_RESPONSE 0x0A
-
+#define SLEEP_CMD 0xA0
 #define DETECTION_ACK_CMD 0xB0
 #define DRONE_LOST_ACK_CMD 0xC0
-#define TRIANGULATION_CMD 0xD0
-#define DRONE_LOST_CMD 0xE0
-#define WKP_CMD 0xF0
+#define DRONE_LOST_AUX_CMD 0xD0
+#define WKP_CMD 0xE0
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -249,37 +246,37 @@ void MX_FREERTOS_Init(void) {
   /* add mutexes, ... */
   /* USER CODE END RTOS_MUTEX */
   /* creation of tim3Sem */
-  tim3SemHandle = osSemaphoreNew(1, 1, &tim3Sem_attributes);
+  tim3SemHandle = osSemaphoreNew(1, 0, &tim3Sem_attributes);
 
   /* creation of uart4RxSem */
-  uart4RxSemHandle = osSemaphoreNew(1, 1, &uart4RxSem_attributes);
+  uart4RxSemHandle = osSemaphoreNew(1, 0, &uart4RxSem_attributes);
 
   /* creation of loraRxSem */
-  loraRxSemHandle = osSemaphoreNew(1, 1, &loraRxSem_attributes);
+  loraRxSemHandle = osSemaphoreNew(1, 0, &loraRxSem_attributes);
 
   /* creation of gpsSem */
-  gpsSemHandle = osSemaphoreNew(1, 1, &gpsSem_attributes);
+  gpsSemHandle = osSemaphoreNew(1, 0, &gpsSem_attributes);
 
   /* creation of chargerSem */
-  chargerSemHandle = osSemaphoreNew(1, 1, &chargerSem_attributes);
+  chargerSemHandle = osSemaphoreNew(1, 0, &chargerSem_attributes);
 
   /* creation of i2c2RxSem */
-  i2c2RxSemHandle = osSemaphoreNew(1, 1, &i2c2RxSem_attributes);
+  i2c2RxSemHandle = osSemaphoreNew(1, 0, &i2c2RxSem_attributes);
 
   /* creation of lpuart1RxSem */
-  lpuart1RxSemHandle = osSemaphoreNew(1, 1, &lpuart1RxSem_attributes);
+  lpuart1RxSemHandle = osSemaphoreNew(1, 0, &lpuart1RxSem_attributes);
 
   /* creation of newRssiSem */
-  newRssiSemHandle = osSemaphoreNew(1, 1, &newRssiSem_attributes);
+  newRssiSemHandle = osSemaphoreNew(1, 0, &newRssiSem_attributes);
 
   /* creation of sleepAckSem */
-  sleepAckSemHandle = osSemaphoreNew(1, 1, &sleepAckSem_attributes);
+  sleepAckSemHandle = osSemaphoreNew(1, 0, &sleepAckSem_attributes);
 
   /* creation of sleepSem */
-  sleepSemHandle = osSemaphoreNew(1, 1, &sleepSem_attributes);
+  sleepSemHandle = osSemaphoreNew(1, 0, &sleepSem_attributes);
 
   /* creation of wkpCmdSem */
-  wkpCmdSemHandle = osSemaphoreNew(1, 1, &wkpCmdSem_attributes);
+  wkpCmdSemHandle = osSemaphoreNew(1, 0, &wkpCmdSem_attributes);
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
@@ -597,7 +594,6 @@ void LoRa_Rx_Task(void *argument)
 {
   /* USER CODE BEGIN LoRa_Rx_Task */
 	uint8_t num_bytes;
-	uint8_t status;
   /* Infinite loop */
   for(;;)
   {
@@ -605,7 +601,6 @@ void LoRa_Rx_Task(void *argument)
 	if (osSemaphoreAcquire(loraRxSemHandle, 200) == osOK) { //Esto se activa al recibir por interrupciones
 	  osMutexAcquire(honeyCombMutexHandle, osWaitForever);
 	  osMutexAcquire(loraMutexHandle, osWaitForever);
-	  status = honey_comb.status;
 	  num_bytes = LoRa_receive_no_mode_change(&myLoRa, honey_comb.rx_buffer, LORA_ACK_PKG_SIZE);
 	  osMutexRelease(loraMutexHandle);
 
@@ -627,15 +622,14 @@ void LoRa_Rx_Task(void *argument)
 		//RECIBO COMANDO INESPERADOS
 		if(osMutexAcquire(honeyCombMutexHandle, 200) == osOK) {
 			osMutexAcquire(loraMutexHandle, 200);
-			status = honey_comb.status;
 			num_bytes = LoRa_receive(&myLoRa, honey_comb.rx_buffer, LORA_MAX_SIZE);
 			osMutexRelease(loraMutexHandle);
 
 			//Esperamos mensajes del tipo ID|CMD
 		    if (num_bytes > 0 && honey_comb.rx_buffer[0] == honey_comb.baliza_id) {
-		        if (honey_comb.rx_buffer[1] == CENTRAL_SLEEP_CMD) {
+		        if (honey_comb.rx_buffer[1] == SLEEP_CMD) {
 		        	osSemaphoreRelease(sleepSemHandle);
-		        } else if (honey_comb.rx_buffer[1] == DRONE_LOST_CMD && honey_comb.node_role == aux) {
+		        } else if (honey_comb.rx_buffer[1] == DRONE_LOST_AUX_CMD && honey_comb.node_role == aux) {
 		        	osSemaphoreRelease(sleepSemHandle);
 		        }
 		    }

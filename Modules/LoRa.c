@@ -674,13 +674,13 @@ uint8_t LoRa_Master_connection(LoRa* _LoRa, HoneyComb_m* honey_comb, osSemaphore
 */
 
 uint8_t LoRa_Master_connection(LoRa* _LoRa, HoneyComb_m* honey_comb) {
-	uint8_t package_aux[LORA_ACK_PKG_SIZE];
+	uint8_t package_aux[LORA_MASTER_CONNECTION_PKG_SIZE];
 
 	package_aux[0] = honey_comb->baliza_id;
 	package_aux[1] = honey_comb->status;
 
 	//Transmitir
-	LoRa_transmit(_LoRa, package_aux, LORA_ACK_PKG_SIZE, 200);
+	LoRa_transmit(_LoRa, package_aux, LORA_MASTER_CONNECTION_PKG_SIZE, 200);
 	print_debug("ACK sent\r\n");
 
 	//ANTES de recibir: configurar modo RXSINGLE
@@ -706,7 +706,7 @@ void LoRa_transmit_error_pkg(LoRa* _LoRa, HoneyComb_m* honey_comb) {
 void LoRa_transmit_alert_pkg(LoRa* _LoRa, HoneyComb_m* honey_comb) {
 	//Formato bytes-->|ID|STATUS|TX_TYPE|
 	uint8_t package_aux_alert[LORA_ALERT_PKG_SIZE];
-	if((honey_comb->status == DETECTION || honey_comb->status == SLEEPING) && (honey_comb->transmission.transmission_type == ALERT)) { //Debe tener ambas flags activas por el main para ejecutar
+	if((honey_comb->status == DETECTION || honey_comb->status == SLEEPING || honey_comb->status == DRONE_LOST) && (honey_comb->transmission.transmission_type == ALERT)) { //Debe tener ambas flags activas por el main para ejecutar
 		package_aux_alert[0] = honey_comb->baliza_id;
 		package_aux_alert[1] = honey_comb->status;
 		package_aux_alert[2] = honey_comb->transmission.transmission_type;

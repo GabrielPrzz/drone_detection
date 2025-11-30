@@ -190,10 +190,11 @@ int main(void)
 
 		while (!honey_comb.master_acknowledge) { 						//Esperamos la recepcion e intentamos conectarnos cada 200ms
 			LoRa_Master_connection(&myLoRa, &honey_comb);
-			HAL_Delay(200);
+			HAL_Delay(1000);
 		}
 
 		if (honey_comb.status == NODE_ERROR) {
+			HAL_Delay(200);
 			LoRa_transmit_error_pkg(&myLoRa, &honey_comb);
 		} else {
 			honey_comb.status = SCAN;
@@ -865,7 +866,7 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin) {
 				print_debug("ACK RECEIVED\r\n");
 				LoRa_gotoMode(&myLoRa, SLEEP_MODE);
 				honey_comb.master_acknowledge = 1;
-				honey_comb.node_role = honey_comb.rx_buffer[3];
+				honey_comb.node_role = honey_comb.rx_buffer[2];
 			}
 		} else {
 			osSemaphoreRelease(loraRxSemHandle);
