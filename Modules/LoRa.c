@@ -639,39 +639,7 @@ uint8_t LoRa_connection(LoRa* _LoRa, SPI_HandleTypeDef* _hSPIx) { //Mi config
 	return 0; //Se inicializo bien
 }
 
-/*
-//RTOS FUNCTION
-uint8_t LoRa_Master_connection(LoRa* _LoRa, HoneyComb_m* honey_comb, osSemaphoreId_t loraRxSemHandle) {
-	uint8_t package_aux[LORA_ACK_PKG_SIZE];
-	uint8_t ack_reception[LORA_ACK_PKG_SIZE];
 
-	package_aux[0] = honey_comb->baliza_id;
-	package_aux[1] = honey_comb->status;
-
-	//Transmitir
-	LoRa_transmit(_LoRa, package_aux, LORA_ACK_PKG_SIZE, 200);
-	print_debug("ACK sent\r\n");
-
-	//ANTES de recibir: configurar modo RXSINGLE
-	LoRa_gotoMode(_LoRa, RXSINGLE_MODE);
-	osDelay(10);
-
-	//Esperar interrupción con timeout
-	if (osSemaphoreAcquire(loraRxSemHandle, 1000) == osOK) {
-		//La interrupción se disparó = hay dato
-		uint8_t num_bytes = LoRa_receive_no_mode_change(_LoRa, ack_reception, LORA_ACK_PKG_SIZE);
-
-		if (num_bytes > 0 && ack_reception[0] == honey_comb->baliza_id && ack_reception[1] == 0xAA) {
-			print_debug("ACK RECEIVED\r\n");
-			LoRa_gotoMode(_LoRa, SLEEP_MODE);
-			return 1;
-		}
-	}
-	print_debug("No ACK RECEIVED\r\n");
-	LoRa_gotoMode(_LoRa, SLEEP_MODE);
-	return 0;
-}
-*/
 
 uint8_t LoRa_Master_connection(LoRa* _LoRa, HoneyComb_m* honey_comb) {
 	uint8_t package_aux[LORA_MASTER_CONNECTION_PKG_SIZE];

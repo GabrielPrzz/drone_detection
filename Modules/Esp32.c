@@ -33,13 +33,12 @@ uint8_t esp32_connection(UART_HandleTypeDef* _uart) {
 }
 
 void esp32_wkp(UART_HandleTypeDef* _uart) {
-    uint8_t response = 0;
     uint8_t check_msg = ESP32_CHECK;
 
 	HAL_GPIO_WritePin(ESP32_WKP_GPIO_Port, ESP32_WKP_Pin, GPIO_PIN_SET);
-	osDelay(5);
+	osDelay(10);
 	HAL_GPIO_WritePin(ESP32_WKP_GPIO_Port, ESP32_WKP_Pin, GPIO_PIN_RESET);
-	osDelay(30);
+	osDelay(40);
 
 	HAL_UART_Transmit(_uart, &check_msg, 1, 100);
 }

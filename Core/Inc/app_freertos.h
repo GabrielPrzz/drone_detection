@@ -79,6 +79,7 @@ extern osSemaphoreId_t newRssiSemHandle;
 extern osSemaphoreId_t sleepAckSemHandle;
 extern osSemaphoreId_t sleepSemHandle;
 extern osSemaphoreId_t wkpCmdSemHandle;
+extern osSemaphoreId_t esp32AckSemHandle;
 
 /* Exported function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */

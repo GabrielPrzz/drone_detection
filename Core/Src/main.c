@@ -39,7 +39,6 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define BALIZA_ID 65
-#define SLEEP_COUNTER 1 //Para que cada X minutos haga su sleep
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -76,6 +75,7 @@ uint8_t rssi_index = 0;
 int8_t uart_rx_buffer[15] = {0};  			//[0xAA][rssi×13][CRC] Variable auxiliar
 uint8_t gps_buffer[512] = {0};
 
+extern osMutexId_t printUartMutexHandle;
 extern osSemaphoreId_t uart4RxSemHandle;
 extern osSemaphoreId_t lpuart1RxSemHandle;
 extern osSemaphoreId_t i2c2RxSemHandle;
@@ -159,7 +159,7 @@ int main(void)
 	HAL_TIM_Base_Stop_IT(&htim3); 						//Solo se activa cuando las inicializaciones estan correctas
 	HAL_TIM_Base_Stop_IT(&htim4);
 	HAL_TIM_Base_Stop_IT(&htim6);
-
+	HAL_UART_Receive_DMA(&hlpuart1, gps_buffer, 512);
 
 	//LoRa MODULE Startup
 	myLoRa = newLoRa(); 								//Inicializa el modulo LoRa con las configuraciones cargadas
@@ -169,14 +169,14 @@ int main(void)
 	//Unit Charger startup
 	honey_comb.devices.Charger_State = !(MAX17048_connection(&hi2c2));
 	//GPS startup
-	honey_comb.devices.GPS_State = GPS_startup_validation(&hlpuart1, gps_buffer);
+	honey_comb.devices.GPS_State = GPS_startup_validation(&hlpuart1, gps_buffer, &honey_comb);
 
 	 if (honey_comb.devices.LoRa_State    ||
 			 honey_comb.devices.Esp32_State   ||
 			 honey_comb.devices.Charger_State ||
 			 honey_comb.devices.GPS_State) {
 		 honey_comb.status = NODE_ERROR;
-		 print_debug("ERROR: Init failed\r\n");
+		 print_debug_F("ERROR: Init failed\r\n");
 	 }
 	 else {
 		 honey_comb.status = INITIALIZATION;
@@ -889,14 +889,17 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   /* USER CODE BEGIN Callback 0 */
 	if(htim == &htim3) { //350ms dedicado a scan
+		print_debug("TIM3 callback\r\n");
 		osSemaphoreRelease(tim3SemHandle);
 	}
 
 	if(htim == &htim4) { //30s dedicado a bateria
+		print_debug("TIM4 callback\r\n");
 		osSemaphoreRelease(chargerSemHandle);
 	}
 
 	if(htim == &htim6) { //60s dedicado a gps
+		print_debug("TIM6 callback\r\n");
 		osSemaphoreRelease(gpsSemHandle);
 	}
   /* USER CODE END Callback 0 */

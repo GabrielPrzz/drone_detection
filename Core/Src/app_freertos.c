@@ -39,8 +39,15 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+//THRESHOLDS
+#define NET_COUNT_TH     19.19f
+#define CH_ACTIVE_TH     6.06f
+#define DELTA_TH         1.40f
+#define CH_CONC_TH       0.41f
+#define RANGE_TH         22.89f
 #define DETECTION_THRESHOLD 60
 
+//HIVEMASTER_COMMANDS
 #define SLEEP_CMD 0xA0
 #define DETECTION_ACK_CMD 0xB0
 #define DRONE_LOST_ACK_CMD 0xC0
@@ -215,6 +222,11 @@ osSemaphoreId_t wkpCmdSemHandle;
 const osSemaphoreAttr_t wkpCmdSem_attributes = {
   .name = "wkpCmdSem"
 };
+/* Definitions for esp32AckSem */
+osSemaphoreId_t esp32AckSemHandle;
+const osSemaphoreAttr_t esp32AckSem_attributes = {
+  .name = "esp32AckSem"
+};
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
@@ -277,6 +289,9 @@ void MX_FREERTOS_Init(void) {
 
   /* creation of wkpCmdSem */
   wkpCmdSemHandle = osSemaphoreNew(1, 0, &wkpCmdSem_attributes);
+
+  /* creation of esp32AckSem */
+  esp32AckSemHandle = osSemaphoreNew(1, 0, &esp32AckSem_attributes);
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
@@ -364,13 +379,14 @@ void ESP32_Task(void *argument)
 	  if(osSemaphoreAcquire(tim3SemHandle, osWaitForever) == osOK) {
 		  esp32_wkp(&huart4);
 		  HAL_UART_Receive_DMA(&huart4, &response, 1);
-		  if(osSemaphoreAcquire(uart4RxSemHandle, 200)) {
+		  if(osSemaphoreAcquire(uart4RxSemHandle, 1000) == osOK) {
 			  if (response == ESP32_ACK) {
+				  osDelay(10);
 				  esp32_scan(&huart4);
 				  HAL_UART_Receive_DMA(&huart4, uart_rx_buffer, 15);
 				  print_debug("SCAN\r\n");
 
-					if(osSemaphoreAcquire(uart4RxSemHandle, osWaitForever) == osOK) {
+					if(osSemaphoreAcquire(uart4RxSemHandle, 1500) == osOK) {
 						if ((uint8_t)uart_rx_buffer[0] != ESP32_CHECK) {
 							error_flag = 1;
 						}
@@ -393,6 +409,10 @@ void ESP32_Task(void *argument)
 						osSemaphoreRelease(newRssiSemHandle);
 					}
 			  }
+		  }
+		  else {
+			  print_debug("WKP TIMEOUT\r\n");
+			  HAL_UART_DMAStop(&huart4);  //Abortar DMA pendiente
 		  }
 	  }
   }
@@ -487,11 +507,8 @@ void GPS_Task(void *argument)
   for(;;)
   {
       if(osSemaphoreAcquire(gpsSemHandle, osWaitForever) == osOK) {
-    	  HAL_UART_Receive_DMA(&hlpuart1, gps_buffer, 512);
-
     	  if(osSemaphoreAcquire(lpuart1RxSemHandle, 1000) == osOK) {
     		  if(Process_GPS_Buffer(gps_buffer, &lat, &lon)) {
-    			  HAL_UART_DMAStop(&hlpuart1);
     			  osMutexAcquire(honeyCombMutexHandle, osWaitForever);
 				  honey_comb.transmission.location_data.latitude = lat;
 				  honey_comb.transmission.location_data.longitude = lon;
@@ -505,7 +522,6 @@ void GPS_Task(void *argument)
     		  else {
 				  print_debug("GPS NO FIX\r\n");
 			  }
-			  memset(gps_buffer, 0, 512);
     	  }
       }
   }
@@ -534,14 +550,14 @@ void DetectionTask(void *argument)
   {
 	if(honey_comb.node_role == detector) {
 		signal_score = 0, mic_score = 0, total_score = 0;
-		if(osSemaphoreAcquire(newRssiSemHandle, 200) == osOK) {
+		if(osSemaphoreAcquire(newRssiSemHandle, 500) == osOK) {
 			osMutexAcquire(rssiMutexHandle, osWaitForever);
 			signal_score = drone_signal_detection(honey_comb.transmission.rssi_buffer);
 			osMutexRelease(rssiMutexHandle);
 
 			//Falta implementar microfono
 
-			total_score = signal_score + mic_score;
+			total_score = ((signal_score*80)/100)+((mic_score * 20)/100);
 
 			sprintf(debug, "Mic_Score: %d\r\n",
 					mic_score);
@@ -579,6 +595,7 @@ void DetectionTask(void *argument)
 			}
 		}
 	}
+	osDelay(100);
   }
   /* USER CODE END DetectionTask */
 }
@@ -593,54 +610,75 @@ void DetectionTask(void *argument)
 void LoRa_Rx_Task(void *argument)
 {
   /* USER CODE BEGIN LoRa_Rx_Task */
-	uint8_t num_bytes;
+    uint8_t num_bytes;
+    uint8_t initialized = 0;
   /* Infinite loop */
-  for(;;)
-  {
-	//RECIBO COMANDOS QUE SE SON POR IRQ
-	if (osSemaphoreAcquire(loraRxSemHandle, 200) == osOK) { //Esto se activa al recibir por interrupciones
-	  osMutexAcquire(honeyCombMutexHandle, osWaitForever);
-	  osMutexAcquire(loraMutexHandle, osWaitForever);
-	  num_bytes = LoRa_receive_no_mode_change(&myLoRa, honey_comb.rx_buffer, LORA_ACK_PKG_SIZE);
-	  osMutexRelease(loraMutexHandle);
+    for(;;)
+       {
+	   //INICIALIZACIÓN: Poner LoRa en modo escucha (una sola vez)
+	   if (!initialized) {
+		   osMutexAcquire(loraMutexHandle, osWaitForever);
+		   LoRa_gotoMode(&myLoRa, RXSINGLE_MODE);
+		   osMutexRelease(loraMutexHandle);
+		   initialized = 1;
+	   }
 
-	  //Esperamos mensajes del tipo ID|CMD
-      if (num_bytes > 0 && honey_comb.rx_buffer[0] == honey_comb.baliza_id) {
-          if (honey_comb.rx_buffer[1] == DETECTION_ACK_CMD) {
-        	  honey_comb.status = TRIANGULATION;
-          } else if (honey_comb.rx_buffer[1] == DRONE_LOST_ACK_CMD) { //Confirmamos que central sabe se perdio el dron
-        	  honey_comb.status = SCAN;
-          } else if (honey_comb.rx_buffer[1] == WKP_CMD) {
-        	  osSemaphoreRelease(wkpCmdSemHandle);
-          }
-      }
-	  else {
-		  print_debug("RX EMPTY\r\n");
-	  }
-      osMutexRelease(honeyCombMutexHandle);
-	} else {
-		//RECIBO COMANDO INESPERADOS
-		if(osMutexAcquire(honeyCombMutexHandle, 200) == osOK) {
-			osMutexAcquire(loraMutexHandle, 200);
-			num_bytes = LoRa_receive(&myLoRa, honey_comb.rx_buffer, LORA_MAX_SIZE);
-			osMutexRelease(loraMutexHandle);
+	   //ESPERAR INTERRUPCIÓN: Timeout corto para evitar gaps largos
+	   if (osSemaphoreAcquire(loraRxSemHandle, 50) == osOK) {
 
-			//Esperamos mensajes del tipo ID|CMD
-		    if (num_bytes > 0 && honey_comb.rx_buffer[0] == honey_comb.baliza_id) {
-		        if (honey_comb.rx_buffer[1] == SLEEP_CMD) {
-		        	osSemaphoreRelease(sleepSemHandle);
-		        } else if (honey_comb.rx_buffer[1] == DRONE_LOST_AUX_CMD && honey_comb.node_role == aux) {
-		        	osSemaphoreRelease(sleepSemHandle);
-		        }
-		    }
-			else {
-				print_debug("RX EMPTY\r\n");
-			}
-		    osMutexRelease(honeyCombMutexHandle);
-		}
-	}
-    osDelay(100);
-  }
+		   osMutexAcquire(honeyCombMutexHandle, osWaitForever);
+		   osMutexAcquire(loraMutexHandle, osWaitForever);
+
+		   //RECEPCIÓN SIN CAMBIAR MODO: Ya estamos en RXSINGLE_MODE
+		   num_bytes = LoRa_receive_no_mode_change(&myLoRa, honey_comb.rx_buffer,LORA_MAX_SIZE);
+
+		   if (num_bytes > 0 && honey_comb.rx_buffer[0] == honey_comb.baliza_id) {
+
+			   //PROCESAR COMANDO ESPERADO (desde DETECTION)
+			   if (honey_comb.rx_buffer[1] == DETECTION_ACK_CMD) {
+				   honey_comb.status = TRIANGULATION;
+				   print_debug("RX: DETECTION_ACK [OK]\r\n");
+
+			   } else if (honey_comb.rx_buffer[1] == DRONE_LOST_ACK_CMD) {
+				   honey_comb.status = SCAN;
+				   print_debug("RX: DRONE_LOST_ACK [OK]\r\n");
+
+			   } else if (honey_comb.rx_buffer[1] == WKP_CMD) {
+				   print_debug("RX: WKP_CMD [OK]\r\n");
+				   osSemaphoreRelease(wkpCmdSemHandle);
+			   }
+
+			   //PROCESAR COMANDO INESPERADO (desde SCAN/SLEEPING)
+			   else if (honey_comb.rx_buffer[1] == SLEEP_CMD) {
+				   print_debug("RX: SLEEP_CMD [OK]\r\n");
+				   osSemaphoreRelease(sleepSemHandle);
+
+			   } else if (honey_comb.rx_buffer[1] == DRONE_LOST_AUX_CMD &&
+						  honey_comb.node_role == aux) {
+				   print_debug("RX: DRONE_LOST_AUX [OK]\r\n");
+				   osSemaphoreRelease(sleepSemHandle);
+			   }
+		   }
+		   else if (num_bytes > 0) {
+			   print_debug("RX: Invalid packet received\r\n");
+		   }
+
+		   osMutexRelease(loraMutexHandle);
+		   osMutexRelease(honeyCombMutexHandle);
+
+		   //REINICIAR ESCUCHA: Volver a RXSINGLE_MODE después de procesar
+		   osMutexAcquire(loraMutexHandle, osWaitForever);
+		   LoRa_gotoMode(&myLoRa, RXSINGLE_MODE);
+		   osMutexRelease(loraMutexHandle);
+	   }
+	   else {
+		   //TIMEOUT: No recibimos nada en 50ms
+		   //Asegurar que estamos en RXSINGLE_MODE (por si acaso)
+		   osMutexAcquire(loraMutexHandle, 50);
+		   LoRa_gotoMode(&myLoRa, RXSINGLE_MODE);
+		   osMutexRelease(loraMutexHandle);
+	   }
+   }
   /* USER CODE END LoRa_Rx_Task */
 }
 
@@ -694,8 +732,56 @@ void new_rssi_load(int8_t* data, scan_t* history, uint8_t* index) {
 	*index = (*index + 1) % HISTORY_SIZE;
 }
 
-uint8_t drone_signal_detection(scan_t* history) { //Falta implementar detección
-	return 1;
+uint8_t drone_signal_detection(scan_t* history) {
+    // Concatenar últimas 2 ventanas de scan
+    int8_t rssi_data[26];
+    for (int i = 0; i < 13; i++) {
+        rssi_data[i] = history[(rssi_index - 1 + HISTORY_SIZE) % HISTORY_SIZE].rssi[i];
+        rssi_data[13 + i] = history[rssi_index].rssi[i];
+    }
+
+    uint8_t drone_votes = 0;
+
+    /* Feature 1: net_count */
+    uint16_t net_count = 0;
+    for (int i = 0; i < 26; i++) {
+        if (rssi_data[i] > -80) net_count++;
+    }
+    if (net_count < NET_COUNT_TH) drone_votes++;
+
+    /* Feature 2: ch_active */
+    uint16_t ch_bitmap = 0;
+    for (int i = 0; i < 26; i++) {
+        ch_bitmap |= (1 << (i % 14));
+    }
+    uint8_t ch_active = 0;
+    for (int i = 0; i < 14; i++) {
+        if (ch_bitmap & (1 << i)) ch_active++;
+    }
+    if (ch_active < CH_ACTIVE_TH) drone_votes++;
+
+    /* Feature 3: delta (CMSIS std dev) */
+    float32_t rssi_float[26];
+    for (int i = 0; i < 26; i++) {
+        rssi_float[i] = (float32_t)rssi_data[i];
+    }
+    float32_t delta;
+    arm_std_f32(rssi_float, 26, &delta);
+    if (delta > DELTA_TH) drone_votes++;
+
+    /* Feature 4: ch_conc */
+    float32_t ch_conc = (float32_t)ch_active / 14.0f;
+    if (ch_conc > CH_CONC_TH) drone_votes++;
+
+    /* Feature 5: range (CMSIS max/min) */
+    uint32_t idx_max, idx_min;
+    float32_t max_rssi, min_rssi;
+    arm_max_f32(rssi_float, 26, &max_rssi, &idx_max);
+    arm_min_f32(rssi_float, 26, &min_rssi, &idx_min);
+    float32_t range = max_rssi - min_rssi;
+    if (range < RANGE_TH) drone_votes++;
+
+    return (drone_votes * 100) / 5;
 }
 
 /* USER CODE END Application */

@@ -4,21 +4,15 @@
  *  Created on: Nov 23, 2025
  *      Author: josem
  */
-
+#include "main.h"
 #include "Neo_M6.h"
 
-uint8_t GPS_startup_validation(UART_HandleTypeDef *hlpuart, uint8_t *gps_buffer) {
-	HAL_UART_Receive_DMA(hlpuart, gps_buffer, 512);
+uint8_t GPS_startup_validation(UART_HandleTypeDef *hlpuart, uint8_t *gps_buffer, HoneyComb_m* honey_comb) {
 	HAL_Delay(2000);  // Esperar 2s para primer fix
 
-	float_t init_lat, init_lon;
-	if(Process_GPS_Buffer(gps_buffer, &init_lat, &init_lon)) {
-		HAL_UART_DMAStop(hlpuart);
-		memset(gps_buffer, 0, 512);
+	if(Process_GPS_Buffer(gps_buffer, &honey_comb->transmission.location_data.latitude, &honey_comb->transmission.location_data.longitude)) {
 	    return 0;
 	} else {
-		HAL_UART_DMAStop(hlpuart);
-		memset(gps_buffer, 0, 512);
 	    return 1;
 	}
 }
