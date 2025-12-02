@@ -148,6 +148,11 @@ typedef struct {
 	system_role node_role;
 	uint8_t master_acknowledge;
 } HoneyComb_m;
+
+typedef struct {
+    uint8_t pending_cmd;        // Comando pendiente de ACK (0 = ninguno)
+    uint8_t retry_count;        // Contador de reintentos
+} RetxTracker;
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

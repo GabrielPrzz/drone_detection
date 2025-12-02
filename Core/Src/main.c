@@ -169,7 +169,8 @@ int main(void)
 	//Unit Charger startup
 	honey_comb.devices.Charger_State = !(MAX17048_connection(&hi2c2));
 	//GPS startup
-	honey_comb.devices.GPS_State = GPS_startup_validation(&hlpuart1, gps_buffer, &honey_comb);
+	GPS_startup_validation(&hlpuart1, gps_buffer, &honey_comb);
+	honey_comb.devices.GPS_State = heartbeat_GPS(gps_buffer);
 
 	 if (honey_comb.devices.LoRa_State    ||
 			 honey_comb.devices.Esp32_State   ||
@@ -193,15 +194,14 @@ int main(void)
 			HAL_Delay(1000);
 		}
 
-		if (honey_comb.status == NODE_ERROR) {
-			HAL_Delay(200);
+		while (honey_comb.status == NODE_ERROR) {
+			HAL_Delay(10000);
 			LoRa_transmit_error_pkg(&myLoRa, &honey_comb);
-		} else {
-			honey_comb.status = SCAN;
-			HAL_TIM_Base_Start_IT(&htim3); 									//Solo se activa cuando las inicializaciones estan correctas
-			HAL_TIM_Base_Start_IT(&htim4);
-			HAL_TIM_Base_Start_IT(&htim6);
 		}
+		honey_comb.status = SCAN;
+		HAL_TIM_Base_Start_IT(&htim3); 									//Solo se activa cuando las inicializaciones estan correctas
+		HAL_TIM_Base_Start_IT(&htim4);
+		HAL_TIM_Base_Start_IT(&htim6);
 	 }
 	 else {
 		 print_debug_F("CRITICAL ERROR: LoRa failed\r\n");

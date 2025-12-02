@@ -19,9 +19,9 @@ uint8_t GPS_startup_validation(UART_HandleTypeDef *hlpuart, uint8_t *gps_buffer,
 
 uint8_t heartbeat_GPS(uint8_t *gps_buffer){
 	if(gps_buffer[0] != '\0'){
-		return 1;
-	} else {
 		return 0;
+	} else {
+		return 1;
 	}
 }
 

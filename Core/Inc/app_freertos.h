@@ -66,6 +66,7 @@ extern osMutexId_t rssiMutexHandle;
 extern osMutexId_t loraMutexHandle;
 extern osMutexId_t honeyCombMutexHandle;
 extern osMutexId_t printUartMutexHandle;
+extern osMutexId_t retxMutexHandle;
 extern osMessageQueueId_t loraQueueHandle;
 extern osMessageQueueId_t scoreQueueHandle;
 extern osSemaphoreId_t tim3SemHandle;
