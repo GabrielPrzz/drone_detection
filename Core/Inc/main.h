@@ -64,11 +64,11 @@ void Error_Handler(void);
 #define BTN_EXTI_IRQn EXTI13_IRQn
 #define LED2_Pin GPIO_PIN_5
 #define LED2_GPIO_Port GPIOA
-#define LoRa_IRQ_Pin GPIO_PIN_8
-#define LoRa_IRQ_GPIO_Port GPIOC
-#define LoRa_IRQ_EXTI_IRQn EXTI8_IRQn
 #define SPI1_SS_LoRa_Pin GPIO_PIN_9
 #define SPI1_SS_LoRa_GPIO_Port GPIOC
+#define EXT_BTN_Pin GPIO_PIN_8
+#define EXT_BTN_GPIO_Port GPIOA
+#define EXT_BTN_EXTI_IRQn EXTI8_IRQn
 #define SPI1_RST_Pin GPIO_PIN_3
 #define SPI1_RST_GPIO_Port GPIOB
 #define ESP32_WKP_Pin GPIO_PIN_5

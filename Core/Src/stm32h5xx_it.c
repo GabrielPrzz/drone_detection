@@ -55,11 +55,13 @@
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
+extern DMA_NodeTypeDef Node_GPDMA2_Channel0;
+extern DMA_QListTypeDef List_GPDMA2_Channel0;
+extern DMA_HandleTypeDef handle_GPDMA2_Channel0;
 extern I2C_HandleTypeDef hi2c1;
 extern DMA_NodeTypeDef Node_GPDMA1_Channel5;
 extern DMA_QListTypeDef List_GPDMA1_Channel5;
 extern DMA_HandleTypeDef handle_GPDMA1_Channel5;
-extern UART_HandleTypeDef huart4;
 extern UART_HandleTypeDef huart2;
 /* USER CODE BEGIN EV */
 
@@ -211,7 +213,7 @@ void EXTI8_IRQHandler(void)
   /* USER CODE BEGIN EXTI8_IRQn 0 */
 
   /* USER CODE END EXTI8_IRQn 0 */
-  HAL_GPIO_EXTI_IRQHandler(LoRa_IRQ_Pin);
+  HAL_GPIO_EXTI_IRQHandler(EXT_BTN_Pin);
   /* USER CODE BEGIN EXTI8_IRQn 1 */
 
   /* USER CODE END EXTI8_IRQn 1 */
@@ -288,17 +290,17 @@ void USART2_IRQHandler(void)
 }
 
 /**
-  * @brief This function handles UART4 global interrupt.
+  * @brief This function handles GPDMA2 Channel 0 global interrupt.
   */
-void UART4_IRQHandler(void)
+void GPDMA2_Channel0_IRQHandler(void)
 {
-  /* USER CODE BEGIN UART4_IRQn 0 */
+  /* USER CODE BEGIN GPDMA2_Channel0_IRQn 0 */
 
-  /* USER CODE END UART4_IRQn 0 */
-  HAL_UART_IRQHandler(&huart4);
-  /* USER CODE BEGIN UART4_IRQn 1 */
+  /* USER CODE END GPDMA2_Channel0_IRQn 0 */
+  HAL_DMA_IRQHandler(&handle_GPDMA2_Channel0);
+  /* USER CODE BEGIN GPDMA2_Channel0_IRQn 1 */
 
-  /* USER CODE END UART4_IRQn 1 */
+  /* USER CODE END GPDMA2_Channel0_IRQn 1 */
 }
 
 /* USER CODE BEGIN 1 */

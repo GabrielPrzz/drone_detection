@@ -26,6 +26,7 @@
 #include "stdbool.h"
 #include "stdio.h"
 #include "MAX17048.h"
+#include "FFT_DroneDetection_Microphone.h"
 
 /* USER CODE END Includes */
 
@@ -66,6 +67,9 @@ typedef struct{
 
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
+DMA_NodeTypeDef Node_GPDMA2_Channel0;
+DMA_QListTypeDef List_GPDMA2_Channel0;
+DMA_HandleTypeDef handle_GPDMA2_Channel0;
 
 I2C_HandleTypeDef hi2c1;
 
@@ -87,13 +91,14 @@ TIM_HandleTypeDef htim6;
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_GPDMA1_Init(void);
+static void MX_GPDMA2_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_LPUART1_UART_Init(void);
-static void MX_UART4_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_TIM6_Init(void);
+static void MX_UART4_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -141,30 +146,34 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_GPDMA1_Init();
+  MX_GPDMA2_Init();
   MX_ADC1_Init();
   MX_I2C1_Init();
   MX_LPUART1_UART_Init();
-  MX_UART4_Init();
   MX_USART2_UART_Init();
   MX_TIM3_Init();
   MX_TIM6_Init();
+  MX_UART4_Init();
   /* USER CODE BEGIN 2 */
+
+  Microphone_init(&hadc1, &htim6);
 
   maxModule.CHIP_ID = 0;
   maxModule.deviceReady = false;
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-
 	  switch (State) {
 		case IDLE:
 
 			break;
 
 		case MEASURE:
+
 			if(!maxModule.deviceReady)
 			{
 				maxModule.CHIP_ID = MAX17048_connection(&hi2c1);
@@ -177,9 +186,9 @@ int main(void)
 				}
 				else
 				{
-					tx.longitud = (uint16_t)snprintf( (char*)tx.bytes, sizeof(tx.bytes), "No device found\r\n");
+					/*tx.longitud = (uint16_t)snprintf( (char*)tx.bytes, sizeof(tx.bytes), "No device found\r\n");
 					Send_UART(&tx);
-					maxModule.deviceReady = false;
+					maxModule.deviceReady = false;*/
 				}
 			}
 
@@ -191,8 +200,10 @@ int main(void)
 
 				State = SEND;
 			}
-			else
+			else {
+
 				State = IDLE;
+			}
 
 			break;
 
@@ -297,9 +308,9 @@ static void MX_ADC1_Init(void)
   hadc1.Init.DiscontinuousConvMode = DISABLE;
   hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIG_T6_TRGO;
   hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
-  hadc1.Init.DMAContinuousRequests = DISABLE;
+  hadc1.Init.DMAContinuousRequests = ENABLE;
   hadc1.Init.SamplingMode = ADC_SAMPLING_MODE_NORMAL;
-  hadc1.Init.Overrun = ADC_OVR_DATA_PRESERVED;
+  hadc1.Init.Overrun = ADC_OVR_DATA_OVERWRITTEN;
   hadc1.Init.OversamplingMode = DISABLE;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
   {
@@ -308,9 +319,9 @@ static void MX_ADC1_Init(void)
 
   /** Configure Regular Channel
   */
-  sConfig.Channel = ADC_CHANNEL_14;
+  sConfig.Channel = ADC_CHANNEL_5;
   sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_2CYCLES_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_12CYCLES_5;
   sConfig.SingleDiff = ADC_SINGLE_ENDED;
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
@@ -349,6 +360,34 @@ static void MX_GPDMA1_Init(void)
   /* USER CODE BEGIN GPDMA1_Init 2 */
 
   /* USER CODE END GPDMA1_Init 2 */
+
+}
+
+/**
+  * @brief GPDMA2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_GPDMA2_Init(void)
+{
+
+  /* USER CODE BEGIN GPDMA2_Init 0 */
+
+  /* USER CODE END GPDMA2_Init 0 */
+
+  /* Peripheral clock enable */
+  __HAL_RCC_GPDMA2_CLK_ENABLE();
+
+  /* GPDMA2 interrupt Init */
+    HAL_NVIC_SetPriority(GPDMA2_Channel0_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(GPDMA2_Channel0_IRQn);
+
+  /* USER CODE BEGIN GPDMA2_Init 1 */
+
+  /* USER CODE END GPDMA2_Init 1 */
+  /* USER CODE BEGIN GPDMA2_Init 2 */
+
+  /* USER CODE END GPDMA2_Init 2 */
 
 }
 
@@ -612,7 +651,7 @@ static void MX_TIM6_Init(void)
   htim6.Instance = TIM6;
   htim6.Init.Prescaler = 0;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 65535;
+  htim6.Init.Period = 7999;
   htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
   {
@@ -659,11 +698,11 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(ESP32_WKP_GPIO_Port, ESP32_WKP_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : BTN_Pin LoRa_IRQ_Pin */
-  GPIO_InitStruct.Pin = BTN_Pin|LoRa_IRQ_Pin;
+  /*Configure GPIO pin : BTN_Pin */
+  GPIO_InitStruct.Pin = BTN_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+  HAL_GPIO_Init(BTN_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : LED2_Pin */
   GPIO_InitStruct.Pin = LED2_Pin;
@@ -678,6 +717,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
   HAL_GPIO_Init(SPI1_SS_LoRa_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : EXT_BTN_Pin */
+  GPIO_InitStruct.Pin = EXT_BTN_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(EXT_BTN_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : SPI1_RST_Pin ESP32_WKP_Pin */
   GPIO_InitStruct.Pin = SPI1_RST_Pin|ESP32_WKP_Pin;
@@ -704,12 +749,33 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin){
 
 	if(GPIO_Pin == BTN_Pin)
 	{
-			HAL_GPIO_TogglePin(LED2_GPIO_Port, LED2_Pin);
+			//HAL_GPIO_TogglePin(LED2_GPIO_Port, LED2_Pin);
 			if (State == IDLE)
 				State = MEASURE;
 	}
 }
 
+void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin){
+
+	if(GPIO_Pin == EXT_BTN_Pin)
+	{
+			//HAL_GPIO_TogglePin(LED2_GPIO_Port, LED2_Pin);
+			if (State == IDLE)
+				State = MEASURE;
+	}
+}
+
+void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef *hadc){
+	//HAL_GPIO_TogglePin(LED2_GPIO_Port, LED2_Pin);
+	//Microphone_FFTprintPeaksUART(&huart2, 0, 1);
+	Microphone_printDetectionScoreUART(&huart2, 0);
+}
+
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc){
+	//HAL_GPIO_TogglePin(LED2_GPIO_Port, LED2_Pin);
+	//Microphone_FFTprintPeaksUART(&huart2, 1, 1);
+	Microphone_printDetectionScoreUART(&huart2, 1);
+}
 
 /* USER CODE END 4 */
 
