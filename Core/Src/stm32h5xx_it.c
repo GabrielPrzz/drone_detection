@@ -64,9 +64,11 @@ extern DMA_NodeTypeDef Node_GPDMA1_Channel4;
 extern DMA_QListTypeDef List_GPDMA1_Channel4;
 extern DMA_HandleTypeDef handle_GPDMA1_Channel4;
 extern DMA_HandleTypeDef handle_GPDMA1_Channel1;
+extern DMA_HandleTypeDef handle_GPDMA2_Channel2;
+extern DMA_HandleTypeDef handle_GPDMA2_Channel1;
 extern UART_HandleTypeDef hlpuart1;
+extern UART_HandleTypeDef huart5;
 extern UART_HandleTypeDef huart2;
-extern SPI_HandleTypeDef hspi1;
 extern TIM_HandleTypeDef htim3;
 extern TIM_HandleTypeDef htim4;
 extern TIM_HandleTypeDef htim6;
@@ -174,20 +176,6 @@ void DebugMon_Handler(void)
 /* For the available peripheral interrupt handler names,                      */
 /* please refer to the startup file (startup_stm32h5xx.s).                    */
 /******************************************************************************/
-
-/**
-  * @brief This function handles EXTI Line8 interrupt.
-  */
-void EXTI8_IRQHandler(void)
-{
-  /* USER CODE BEGIN EXTI8_IRQn 0 */
-
-  /* USER CODE END EXTI8_IRQn 0 */
-  HAL_GPIO_EXTI_IRQHandler(LoRa_IRQ_Pin);
-  /* USER CODE BEGIN EXTI8_IRQn 1 */
-
-  /* USER CODE END EXTI8_IRQn 1 */
-}
 
 /**
   * @brief This function handles EXTI Line13 interrupt.
@@ -316,20 +304,6 @@ void TIM7_IRQHandler(void)
 }
 
 /**
-  * @brief This function handles SPI1 global interrupt.
-  */
-void SPI1_IRQHandler(void)
-{
-  /* USER CODE BEGIN SPI1_IRQn 0 */
-
-  /* USER CODE END SPI1_IRQn 0 */
-  HAL_SPI_IRQHandler(&hspi1);
-  /* USER CODE BEGIN SPI1_IRQn 1 */
-
-  /* USER CODE END SPI1_IRQn 1 */
-}
-
-/**
   * @brief This function handles USART2 global interrupt.
   */
 void USART2_IRQHandler(void)
@@ -341,6 +315,20 @@ void USART2_IRQHandler(void)
   /* USER CODE BEGIN USART2_IRQn 1 */
 
   /* USER CODE END USART2_IRQn 1 */
+}
+
+/**
+  * @brief This function handles UART5 global interrupt.
+  */
+void UART5_IRQHandler(void)
+{
+  /* USER CODE BEGIN UART5_IRQn 0 */
+
+  /* USER CODE END UART5_IRQn 0 */
+  HAL_UART_IRQHandler(&huart5);
+  /* USER CODE BEGIN UART5_IRQn 1 */
+
+  /* USER CODE END UART5_IRQn 1 */
 }
 
 /**
@@ -383,6 +371,34 @@ void GPDMA2_Channel0_IRQHandler(void)
   /* USER CODE BEGIN GPDMA2_Channel0_IRQn 1 */
 
   /* USER CODE END GPDMA2_Channel0_IRQn 1 */
+}
+
+/**
+  * @brief This function handles GPDMA2 Channel 1 global interrupt.
+  */
+void GPDMA2_Channel1_IRQHandler(void)
+{
+  /* USER CODE BEGIN GPDMA2_Channel1_IRQn 0 */
+
+  /* USER CODE END GPDMA2_Channel1_IRQn 0 */
+  HAL_DMA_IRQHandler(&handle_GPDMA2_Channel1);
+  /* USER CODE BEGIN GPDMA2_Channel1_IRQn 1 */
+
+  /* USER CODE END GPDMA2_Channel1_IRQn 1 */
+}
+
+/**
+  * @brief This function handles GPDMA2 Channel 2 global interrupt.
+  */
+void GPDMA2_Channel2_IRQHandler(void)
+{
+  /* USER CODE BEGIN GPDMA2_Channel2_IRQn 0 */
+
+  /* USER CODE END GPDMA2_Channel2_IRQn 0 */
+  HAL_DMA_IRQHandler(&handle_GPDMA2_Channel2);
+  /* USER CODE BEGIN GPDMA2_Channel2_IRQn 1 */
+
+  /* USER CODE END GPDMA2_Channel2_IRQn 1 */
 }
 
 /* USER CODE BEGIN 1 */

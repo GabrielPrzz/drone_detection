@@ -26,7 +26,7 @@
 #include "arm_math.h"
 #include "Esp32.h"
 #include "MAX17048.h"
-#include "LoRa.h"
+#include "HC12.h"
 #include "Neo_M6.h"
 #include "FFT_DroneDetection_Microphone.h"
 #include <stdio.h>
@@ -39,7 +39,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define BALIZA_ID 65
+#define BALIZA_ID 67
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -58,13 +58,14 @@ DMA_HandleTypeDef handle_GPDMA1_Channel3;
 
 UART_HandleTypeDef hlpuart1;
 UART_HandleTypeDef huart4;
+UART_HandleTypeDef huart5;
 UART_HandleTypeDef huart2;
 DMA_NodeTypeDef Node_GPDMA1_Channel4;
 DMA_QListTypeDef List_GPDMA1_Channel4;
 DMA_HandleTypeDef handle_GPDMA1_Channel4;
 DMA_HandleTypeDef handle_GPDMA1_Channel1;
-
-SPI_HandleTypeDef hspi1;
+DMA_HandleTypeDef handle_GPDMA2_Channel2;
+DMA_HandleTypeDef handle_GPDMA2_Channel1;
 
 TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim4;
@@ -73,13 +74,13 @@ TIM_HandleTypeDef htim7;
 
 /* USER CODE BEGIN PV */
 HoneyComb_m honey_comb = {0};
-LoRa myLoRa;
 GPS_Data_t gps_data = {0};
 
 uint8_t rssi_index = 0;
 uint8_t adc_half = 0;
 int8_t uart_rx_buffer[15] = {0};  			//[0xAA][rssi×13][CRC] Variable auxiliar
 uint8_t gps_buffer[512] = {0};
+char debug_msg[150];
 
 extern osMutexId_t printUartMutexHandle;
 extern osSemaphoreId_t uart4RxSemHandle;
@@ -90,6 +91,7 @@ extern osSemaphoreId_t loraRxSemHandle;
 extern osSemaphoreId_t chargerSemHandle;
 extern osSemaphoreId_t gpsSemHandle;
 extern osSemaphoreId_t sleepSemHandle;
+extern osSemaphoreId_t hc12RxSemHandle;
 
 /* USER CODE END PV */
 
@@ -102,7 +104,6 @@ static void MX_GPDMA2_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_LPUART1_UART_Init(void);
 static void MX_UART4_Init(void);
-static void MX_SPI1_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_TIM4_Init(void);
@@ -110,6 +111,7 @@ static void MX_TIM6_Init(void);
 static void MX_ICACHE_Init(void);
 static void MX_I2C2_Init(void);
 static void MX_TIM7_Init(void);
+static void MX_UART5_Init(void);
 /* USER CODE BEGIN PFP */
 void print_debug(const char *msg);
 void print_debug_F(const char *msg);
@@ -157,7 +159,6 @@ int main(void)
   MX_ADC1_Init();
   MX_LPUART1_UART_Init();
   MX_UART4_Init();
-  MX_SPI1_Init();
   MX_TIM3_Init();
   MX_USART2_UART_Init();
   MX_TIM4_Init();
@@ -165,15 +166,18 @@ int main(void)
   MX_ICACHE_Init();
   MX_I2C2_Init();
   MX_TIM7_Init();
+  MX_UART5_Init();
   /* USER CODE BEGIN 2 */
-	HAL_TIM_Base_Stop_IT(&htim3); 						//Solo se activa cuando las inicializaciones estan correctas
+	HAL_TIM_Base_Stop_IT(&htim3);
 	HAL_TIM_Base_Stop_IT(&htim4);
 	HAL_TIM_Base_Stop_IT(&htim7);
 	HAL_UART_Receive_DMA(&hlpuart1, gps_buffer, 512);
 
-	//LoRa MODULE Startup
-	myLoRa = newLoRa(); 								//Inicializa el modulo LoRa con las configuraciones cargadas
-	honey_comb.devices.LoRa_State = LoRa_connection(&myLoRa, &hspi1);
+	//HC-12 MODULE Startup
+	//HC12_Init(&huart5, HC12_SET_GPIO_Port, HC12_SET_Pin);
+	honey_comb.devices.HC12_State = 0;
+	//HC12_StartReceiveIdleDMA(&huart5, honey_comb.rx_buffer, HC12_MAX_SIZE);
+
 	//ESP32 startup
 	honey_comb.devices.Esp32_State = esp32_connection(&huart4);
 	//Unit Charger startup
@@ -184,42 +188,45 @@ int main(void)
 
 	Microphone_init(&hadc1, &htim6);
 
-	 if (honey_comb.devices.LoRa_State    ||
+	 if (honey_comb.devices.HC12_State    ||
 			 honey_comb.devices.Esp32_State   ||
 			 honey_comb.devices.Charger_State ||
 			 honey_comb.devices.GPS_State) {
 		 honey_comb.status = NODE_ERROR;
 		 print_debug_F("ERROR: Init failed\r\n");
+		    sprintf(debug_msg, "ERROR: Init failed [HC12=%d Esp32=%d Charger=%d GPS=%d]\r\n",
+		        honey_comb.devices.HC12_State,
+		        honey_comb.devices.Esp32_State,
+		        honey_comb.devices.Charger_State,
+		        honey_comb.devices.GPS_State);
+		    print_debug_F(debug_msg);
 	 }
 	 else {
 		 honey_comb.status = INITIALIZATION;
 		 print_debug_F("INIT SUCCESS\r\n");
 	 }
 
-	 if (!honey_comb.devices.LoRa_State) {
-		 honey_comb.baliza_id = BALIZA_ID;								//Fijar ID por baliza, Baliza A, B y C...
+	 if (!honey_comb.devices.HC12_State) {
+		 honey_comb.baliza_id = BALIZA_ID;
 		 honey_comb.master_acknowledge = 0;
 		 honey_comb.transmission.transmission_type = ALERT;
 
-		while (!honey_comb.master_acknowledge) { 						//Esperamos la recepcion e intentamos conectarnos cada 200ms
-			LoRa_Master_connection(&myLoRa, &honey_comb);
-			HAL_Delay(500);
+		while (!honey_comb.master_acknowledge) {
+			HC12_Master_connection(&huart5, &honey_comb);
 		}
 
 		while (honey_comb.status == NODE_ERROR) {
+			HC12_transmit_error_pkg(&huart5, &honey_comb);
 			HAL_Delay(10000);
-			LoRa_transmit_error_pkg(&myLoRa, &honey_comb);
 		}
 		honey_comb.status = SCAN;
-		HAL_TIM_Base_Start_IT(&htim3); 									//Solo se activa cuando las inicializaciones estan correctas
+		HAL_TIM_Base_Start_IT(&htim3);
 		HAL_TIM_Base_Start_IT(&htim4);
 		HAL_TIM_Base_Start_IT(&htim7);
 	 }
 	 else {
-		 print_debug_F("CRITICAL ERROR: LoRa failed\r\n");
-		 //Agregar funcion buzzer
+		 print_debug_F("CRITICAL ERROR: HC-12 failed\r\n");
 	 }
-
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -261,22 +268,11 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_CSI;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.HSIDiv = RCC_HSI_DIV2;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
-  RCC_OscInitStruct.CSIState = RCC_CSI_ON;
-  RCC_OscInitStruct.CSICalibrationValue = RCC_CSICALIBRATION_DEFAULT;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLL1_SOURCE_CSI;
-  RCC_OscInitStruct.PLL.PLLM = 1;
-  RCC_OscInitStruct.PLL.PLLN = 32;
-  RCC_OscInitStruct.PLL.PLLP = 2;
-  RCC_OscInitStruct.PLL.PLLQ = 3;
-  RCC_OscInitStruct.PLL.PLLR = 2;
-  RCC_OscInitStruct.PLL.PLLRGE = RCC_PLL1_VCIRANGE_2;
-  RCC_OscInitStruct.PLL.PLLVCOSEL = RCC_PLL1_VCORANGE_WIDE;
-  RCC_OscInitStruct.PLL.PLLFRACN = 0;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -412,6 +408,10 @@ static void MX_GPDMA2_Init(void)
   /* GPDMA2 interrupt Init */
     HAL_NVIC_SetPriority(GPDMA2_Channel0_IRQn, 5, 0);
     HAL_NVIC_EnableIRQ(GPDMA2_Channel0_IRQn);
+    HAL_NVIC_SetPriority(GPDMA2_Channel1_IRQn, 5, 0);
+    HAL_NVIC_EnableIRQ(GPDMA2_Channel1_IRQn);
+    HAL_NVIC_SetPriority(GPDMA2_Channel2_IRQn, 5, 0);
+    HAL_NVIC_EnableIRQ(GPDMA2_Channel2_IRQn);
 
   /* USER CODE BEGIN GPDMA2_Init 1 */
 
@@ -598,6 +598,54 @@ static void MX_UART4_Init(void)
 }
 
 /**
+  * @brief UART5 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_UART5_Init(void)
+{
+
+  /* USER CODE BEGIN UART5_Init 0 */
+
+  /* USER CODE END UART5_Init 0 */
+
+  /* USER CODE BEGIN UART5_Init 1 */
+
+  /* USER CODE END UART5_Init 1 */
+  huart5.Instance = UART5;
+  huart5.Init.BaudRate = 9600;
+  huart5.Init.WordLength = UART_WORDLENGTH_8B;
+  huart5.Init.StopBits = UART_STOPBITS_1;
+  huart5.Init.Parity = UART_PARITY_NONE;
+  huart5.Init.Mode = UART_MODE_TX_RX;
+  huart5.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart5.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart5.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart5.Init.ClockPrescaler = UART_PRESCALER_DIV1;
+  huart5.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart5) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_SetTxFifoThreshold(&huart5, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_SetRxFifoThreshold(&huart5, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_DisableFifoMode(&huart5) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN UART5_Init 2 */
+
+  /* USER CODE END UART5_Init 2 */
+
+}
+
+/**
   * @brief USART2 Initialization Function
   * @param None
   * @retval None
@@ -642,54 +690,6 @@ static void MX_USART2_UART_Init(void)
   /* USER CODE BEGIN USART2_Init 2 */
 
   /* USER CODE END USART2_Init 2 */
-
-}
-
-/**
-  * @brief SPI1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_SPI1_Init(void)
-{
-
-  /* USER CODE BEGIN SPI1_Init 0 */
-
-  /* USER CODE END SPI1_Init 0 */
-
-  /* USER CODE BEGIN SPI1_Init 1 */
-
-  /* USER CODE END SPI1_Init 1 */
-  /* SPI1 parameter configuration*/
-  hspi1.Instance = SPI1;
-  hspi1.Init.Mode = SPI_MODE_MASTER;
-  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
-  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
-  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
-  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
-  hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
-  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
-  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
-  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
-  hspi1.Init.CRCPolynomial = 0x7;
-  hspi1.Init.NSSPMode = SPI_NSS_PULSE_DISABLE;
-  hspi1.Init.NSSPolarity = SPI_NSS_POLARITY_LOW;
-  hspi1.Init.FifoThreshold = SPI_FIFO_THRESHOLD_01DATA;
-  hspi1.Init.MasterSSIdleness = SPI_MASTER_SS_IDLENESS_00CYCLE;
-  hspi1.Init.MasterInterDataIdleness = SPI_MASTER_INTERDATA_IDLENESS_00CYCLE;
-  hspi1.Init.MasterReceiverAutoSusp = SPI_MASTER_RX_AUTOSUSP_DISABLE;
-  hspi1.Init.MasterKeepIOState = SPI_MASTER_KEEP_IO_STATE_DISABLE;
-  hspi1.Init.IOSwap = SPI_IO_SWAP_DISABLE;
-  hspi1.Init.ReadyMasterManagement = SPI_RDY_MASTER_MANAGEMENT_INTERNALLY;
-  hspi1.Init.ReadyPolarity = SPI_RDY_POLARITY_HIGH;
-  if (HAL_SPI_Init(&hspi1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN SPI1_Init 2 */
-
-  /* USER CODE END SPI1_Init 2 */
 
 }
 
@@ -878,38 +878,22 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(SPI1_SS_LoRa_GPIO_Port, SPI1_SS_LoRa_Pin, GPIO_PIN_SET);
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(SPI1_RST_GPIO_Port, SPI1_RST_Pin, GPIO_PIN_SET);
-
-  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(ESP32_WKP_GPIO_Port, ESP32_WKP_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : BTN_Pin LoRa_IRQ_Pin */
-  GPIO_InitStruct.Pin = BTN_Pin|LoRa_IRQ_Pin;
+  /*Configure GPIO pin : BTN_Pin */
+  GPIO_InitStruct.Pin = BTN_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+  HAL_GPIO_Init(BTN_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : SPI1_SS_LoRa_Pin */
-  GPIO_InitStruct.Pin = SPI1_SS_LoRa_Pin;
+  /*Configure GPIO pin : ESP32_WKP_Pin */
+  GPIO_InitStruct.Pin = ESP32_WKP_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-  HAL_GPIO_Init(SPI1_SS_LoRa_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : SPI1_RST_Pin ESP32_WKP_Pin */
-  GPIO_InitStruct.Pin = SPI1_RST_Pin|ESP32_WKP_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+  HAL_GPIO_Init(ESP32_WKP_GPIO_Port, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI8_IRQn, 5, 0);
-  HAL_NVIC_EnableIRQ(EXTI8_IRQn);
-
   HAL_NVIC_SetPriority(EXTI13_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(EXTI13_IRQn);
 
@@ -937,21 +921,9 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 	}
 }
 
-void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin) {
-	if (GPIO_Pin == LoRa_IRQ_Pin) {
-		if(!honey_comb.master_acknowledge) { //Solo se ejecuta antes de las tasks
-			//La interrupción se disparó = hay dato
-			uint8_t num_bytes = LoRa_receive_no_mode_change(&myLoRa, honey_comb.rx_buffer, LORA_ACK_PKG_SIZE);
-			if (num_bytes > 0 && (honey_comb.rx_buffer[0] == honey_comb.baliza_id && honey_comb.rx_buffer[1] == 0xAA)) {
-				print_debug("ACK RECEIVED\r\n");
-				LoRa_gotoMode(&myLoRa, SLEEP_MODE);
-				honey_comb.master_acknowledge = 1;
-				honey_comb.node_role = honey_comb.rx_buffer[2];
-			}
-		} else {
-			osSemaphoreRelease(loraRxSemHandle);
-			print_debug_F("LORA_RX callback\r\n");
-		}
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
+	if(huart == &huart5 && honey_comb.master_acknowledge) {
+		osSemaphoreRelease(hc12RxSemHandle);
 	}
 }
 
@@ -963,7 +935,15 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
 	adc_half = 1;
 }
 
-
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
+    if(huart == &huart5) {
+    	if(honey_comb.master_acknowledge) {
+    		print_debug("HC12_TX: DMA TX complete\r\n");
+    	} else {
+    		print_debug_F("Ack sent\r\n");
+    	}
+    }
+}
 
 /* USER CODE END 4 */
 

@@ -62,13 +62,6 @@ void Error_Handler(void);
 #define BTN_Pin GPIO_PIN_13
 #define BTN_GPIO_Port GPIOC
 #define BTN_EXTI_IRQn EXTI13_IRQn
-#define LoRa_IRQ_Pin GPIO_PIN_8
-#define LoRa_IRQ_GPIO_Port GPIOC
-#define LoRa_IRQ_EXTI_IRQn EXTI8_IRQn
-#define SPI1_SS_LoRa_Pin GPIO_PIN_9
-#define SPI1_SS_LoRa_GPIO_Port GPIOC
-#define SPI1_RST_Pin GPIO_PIN_3
-#define SPI1_RST_GPIO_Port GPIOB
 #define ESP32_WKP_Pin GPIO_PIN_5
 #define ESP32_WKP_GPIO_Port GPIOB
 
@@ -102,6 +95,7 @@ typedef enum {							//Señales que avisan que tipo de dato mandamos
 } TX_TYPE;
 
 typedef enum {
+	undefined,
 	detector,
 	aux,
 } system_role;
@@ -130,7 +124,7 @@ typedef struct {
 
 
 typedef struct { 						//States para verificación en las Bálizas
-	uint8_t LoRa_State;					//1 para errores, 0 para OK
+	uint8_t HC12_State;					//1 para errores, 0 para OK
 	uint8_t Esp32_State;
 	uint8_t GPS_State;
 	uint8_t Charger_State;
@@ -147,6 +141,7 @@ typedef struct {
 
 	system_role node_role;
 	uint8_t master_acknowledge;
+	uint8_t rx_len;
 } HoneyComb_m;
 
 typedef struct {

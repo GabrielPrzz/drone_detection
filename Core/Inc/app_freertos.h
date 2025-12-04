@@ -56,22 +56,21 @@ extern "C" {
 /* USER CODE END EM */
 extern osThreadId_t defaultTaskHandle;
 extern osThreadId_t ESP32_TaskHandle;
-extern osThreadId_t LoRa_TaskHandle;
+extern osThreadId_t HC12_TaskHandle;
 extern osThreadId_t Battery_TaskHandle;
 extern osThreadId_t GPS_TaskHandle;
 extern osThreadId_t DetectionTaskHandle;
-extern osThreadId_t LoRa_Rx_TaskHandle;
+extern osThreadId_t HC12_Rx_TaskHandle;
 extern osThreadId_t SleepTaskHandle;
 extern osMutexId_t rssiMutexHandle;
-extern osMutexId_t loraMutexHandle;
 extern osMutexId_t honeyCombMutexHandle;
 extern osMutexId_t printUartMutexHandle;
 extern osMutexId_t retxMutexHandle;
-extern osMessageQueueId_t loraQueueHandle;
+extern osMessageQueueId_t hc12QueueHandle;
 extern osMessageQueueId_t scoreQueueHandle;
 extern osSemaphoreId_t tim3SemHandle;
 extern osSemaphoreId_t uart4RxSemHandle;
-extern osSemaphoreId_t loraRxSemHandle;
+extern osSemaphoreId_t hc12RxSemHandle;
 extern osSemaphoreId_t gpsSemHandle;
 extern osSemaphoreId_t chargerSemHandle;
 extern osSemaphoreId_t i2c2RxSemHandle;
@@ -89,11 +88,11 @@ extern osSemaphoreId_t esp32AckSemHandle;
 
 void StartDefaultTask(void *argument);
 void ESP32_Task(void *argument);
-void LoRa_Task(void *argument);
+void HC12_Task(void *argument);
 void Battery_Task(void *argument);
 void GPS_Task(void *argument);
 void DetectionTask(void *argument);
-void LoRa_Rx_Task(void *argument);
+void HC12_Rx_Task(void *argument);
 void SleepTask(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */

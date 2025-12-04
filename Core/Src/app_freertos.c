@@ -25,9 +25,9 @@
 #include <stdlib.h>
 #include "arm_math.h"
 #include "Esp32.h"
-#include "LoRa.h"
 #include "MAX17048.h"
 #include "Neo_M6.h"
+#include "HC12.h"
 #include "FFT_DroneDetection_Microphone.h"
 #include <stdio.h>
 #include <string.h>
@@ -57,7 +57,6 @@
 #define DRONE_LOST_AUX_CMD 0xD0
 #define WKP_CMD 0xE0
 
-
 //TRANSMISSION
 #define MAX_RETRIES      5
 #define TRIANGULATION_CMD 4
@@ -77,11 +76,11 @@ extern int8_t uart_rx_buffer[15];
 extern UART_HandleTypeDef hlpuart1;
 extern UART_HandleTypeDef huart4;
 extern UART_HandleTypeDef huart2;
+extern UART_HandleTypeDef huart5;
 extern I2C_HandleTypeDef hi2c2;
 extern TIM_HandleTypeDef htim3;
 extern TIM_HandleTypeDef htim4;
 extern TIM_HandleTypeDef htim6;
-extern LoRa myLoRa;
 extern uint8_t gps_buffer[512];
 extern GPS_Data_t gps_data;
 extern uint8_t adc_half;
@@ -107,10 +106,10 @@ const osThreadAttr_t ESP32_Task_attributes = {
   .priority = (osPriority_t) osPriorityHigh,
   .stack_size = 256 * 4
 };
-/* Definitions for LoRa_Task */
-osThreadId_t LoRa_TaskHandle;
-const osThreadAttr_t LoRa_Task_attributes = {
-  .name = "LoRa_Task",
+/* Definitions for HC12_Task */
+osThreadId_t HC12_TaskHandle;
+const osThreadAttr_t HC12_Task_attributes = {
+  .name = "HC12_Task",
   .priority = (osPriority_t) osPriorityAboveNormal,
   .stack_size = 512 * 4
 };
@@ -135,10 +134,10 @@ const osThreadAttr_t DetectionTask_attributes = {
   .priority = (osPriority_t) osPriorityAboveNormal,
   .stack_size = 12000 * 4
 };
-/* Definitions for LoRa_Rx_Task */
-osThreadId_t LoRa_Rx_TaskHandle;
-const osThreadAttr_t LoRa_Rx_Task_attributes = {
-  .name = "LoRa_Rx_Task",
+/* Definitions for HC12_Rx_Task */
+osThreadId_t HC12_Rx_TaskHandle;
+const osThreadAttr_t HC12_Rx_Task_attributes = {
+  .name = "HC12_Rx_Task",
   .priority = (osPriority_t) osPriorityNormal,
   .stack_size = 256 * 4
 };
@@ -153,11 +152,6 @@ const osThreadAttr_t SleepTask_attributes = {
 osMutexId_t rssiMutexHandle;
 const osMutexAttr_t rssiMutex_attributes = {
   .name = "rssiMutex"
-};
-/* Definitions for loraMutex */
-osMutexId_t loraMutexHandle;
-const osMutexAttr_t loraMutex_attributes = {
-  .name = "loraMutex"
 };
 /* Definitions for honeyCombMutex */
 osMutexId_t honeyCombMutexHandle;
@@ -174,10 +168,10 @@ osMutexId_t retxMutexHandle;
 const osMutexAttr_t retxMutex_attributes = {
   .name = "retxMutex"
 };
-/* Definitions for loraQueue */
-osMessageQueueId_t loraQueueHandle;
-const osMessageQueueAttr_t loraQueue_attributes = {
-  .name = "loraQueue"
+/* Definitions for hc12Queue */
+osMessageQueueId_t hc12QueueHandle;
+const osMessageQueueAttr_t hc12Queue_attributes = {
+  .name = "hc12Queue"
 };
 /* Definitions for scoreQueue */
 osMessageQueueId_t scoreQueueHandle;
@@ -194,10 +188,10 @@ osSemaphoreId_t uart4RxSemHandle;
 const osSemaphoreAttr_t uart4RxSem_attributes = {
   .name = "uart4RxSem"
 };
-/* Definitions for loraRxSem */
-osSemaphoreId_t loraRxSemHandle;
-const osSemaphoreAttr_t loraRxSem_attributes = {
-  .name = "loraRxSem"
+/* Definitions for hc12RxSem */
+osSemaphoreId_t hc12RxSemHandle;
+const osSemaphoreAttr_t hc12RxSem_attributes = {
+  .name = "hc12RxSem"
 };
 /* Definitions for gpsSem */
 osSemaphoreId_t gpsSemHandle;
@@ -262,9 +256,6 @@ void MX_FREERTOS_Init(void) {
   /* creation of rssiMutex */
   rssiMutexHandle = osMutexNew(&rssiMutex_attributes);
 
-  /* creation of loraMutex */
-  loraMutexHandle = osMutexNew(&loraMutex_attributes);
-
   /* creation of honeyCombMutex */
   honeyCombMutexHandle = osMutexNew(&honeyCombMutex_attributes);
 
@@ -283,8 +274,8 @@ void MX_FREERTOS_Init(void) {
   /* creation of uart4RxSem */
   uart4RxSemHandle = osSemaphoreNew(1, 0, &uart4RxSem_attributes);
 
-  /* creation of loraRxSem */
-  loraRxSemHandle = osSemaphoreNew(1, 0, &loraRxSem_attributes);
+  /* creation of hc12RxSem */
+  hc12RxSemHandle = osSemaphoreNew(1, 0, &hc12RxSem_attributes);
 
   /* creation of gpsSem */
   gpsSemHandle = osSemaphoreNew(1, 0, &gpsSem_attributes);
@@ -320,8 +311,8 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE BEGIN RTOS_TIMERS */
   /* start timers, add new ones, ... */
   /* USER CODE END RTOS_TIMERS */
-  /* creation of loraQueue */
-  loraQueueHandle = osMessageQueueNew (16, sizeof(uint8_t), &loraQueue_attributes);
+  /* creation of hc12Queue */
+  hc12QueueHandle = osMessageQueueNew (16, sizeof(uint8_t), &hc12Queue_attributes);
   /* creation of scoreQueue */
   scoreQueueHandle = osMessageQueueNew (16, sizeof(uint8_t), &scoreQueue_attributes);
 
@@ -334,8 +325,8 @@ void MX_FREERTOS_Init(void) {
   /* creation of ESP32_Task */
   ESP32_TaskHandle = osThreadNew(ESP32_Task, NULL, &ESP32_Task_attributes);
 
-  /* creation of LoRa_Task */
-  LoRa_TaskHandle = osThreadNew(LoRa_Task, NULL, &LoRa_Task_attributes);
+  /* creation of HC12_Task */
+  HC12_TaskHandle = osThreadNew(HC12_Task, NULL, &HC12_Task_attributes);
 
   /* creation of Battery_Task */
   Battery_TaskHandle = osThreadNew(Battery_Task, NULL, &Battery_Task_attributes);
@@ -346,8 +337,8 @@ void MX_FREERTOS_Init(void) {
   /* creation of DetectionTask */
   DetectionTaskHandle = osThreadNew(DetectionTask, NULL, &DetectionTask_attributes);
 
-  /* creation of LoRa_Rx_Task */
-  LoRa_Rx_TaskHandle = osThreadNew(LoRa_Rx_Task, NULL, &LoRa_Rx_Task_attributes);
+  /* creation of HC12_Rx_Task */
+  HC12_Rx_TaskHandle = osThreadNew(HC12_Rx_Task, NULL, &HC12_Rx_Task_attributes);
 
   /* creation of SleepTask */
   SleepTaskHandle = osThreadNew(SleepTask, NULL, &SleepTask_attributes);
@@ -439,44 +430,43 @@ void ESP32_Task(void *argument)
   /* USER CODE END ESP32_Task */
 }
 
-/* USER CODE BEGIN Header_LoRa_Task */
+/* USER CODE BEGIN Header_HC12_Task */
 /**
-* @brief Function implementing the LoRa_Task thread.
+* @brief Function implementing the HC12_Task thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_LoRa_Task */
-void LoRa_Task(void *argument)
+/* USER CODE END Header_HC12_Task */
+void HC12_Task(void *argument)
 {
-  /* USER CODE BEGIN LoRa_Task */
-	uint8_t cmd;
+  /* USER CODE BEGIN HC12_Task */
+	  uint8_t cmd;
   /* Infinite loop */
   for(;;)
   {
-	//Obtener nuevo comando SOLO si no hay pendiente
-	  osMutexAcquire(retxMutexHandle, osWaitForever);
-	  if (current_cmd == 0) {
-	      //Intentar obtener DETECTION primero (timeout 0 = no bloquear)
-	      if (osMessageQueueGet(loraQueueHandle, &cmd, NULL, 0) == osOK) {
-	          if (cmd == 1) {  //Es DETECTION
-	              current_cmd = cmd;
-	              retx_tracker.pending_cmd = cmd;
-	              retx_tracker.retry_count = 0;
-	          } else {
-	              //No es DETECTION, devolver a la cola y esperar
-	              osMessageQueuePut(loraQueueHandle, &cmd, 0, 0);
-	              cmd = 0;
-	          }
-	      }
-
-	      //Si no obtuvimos DETECTION, esperar cualquier comando
-	      if (current_cmd == 0 && osMessageQueueGet(loraQueueHandle, &cmd, NULL, 10) == osOK) {
-	          current_cmd = cmd;
-	          retx_tracker.pending_cmd = cmd;
-	          retx_tracker.retry_count = 0;
-	      }
+	osMutexAcquire(retxMutexHandle, osWaitForever);
+	if (current_cmd == 0) {
+	  //Intentar obtener ALERT primero (timeout 0 = no bloquear)
+	  if (osMessageQueueGet(hc12QueueHandle, &cmd, NULL, 0) == osOK) {
+		  if (cmd == 1) {  //Es ALERT
+			  current_cmd = cmd;
+			  retx_tracker.pending_cmd = cmd;
+			  retx_tracker.retry_count = 0;
+		  } else {
+			  //No es ALERT, devolver a la cola y esperar
+			  osMessageQueuePut(hc12QueueHandle, &cmd, 0, 0);
+			  cmd = 0;
+		  }
 	  }
-	  osMutexRelease(retxMutexHandle);
+
+	  //Si no obtuvimos ALERT, esperar cualquier comando
+	  if (current_cmd == 0 && osMessageQueueGet(hc12QueueHandle, &cmd, NULL, 10) == osOK) {
+		  current_cmd = cmd;
+		  retx_tracker.pending_cmd = cmd;
+		  retx_tracker.retry_count = 0;
+	  }
+	}
+	osMutexRelease(retxMutexHandle);
 
 	//Reintentar actual
 	osMutexAcquire(retxMutexHandle, osWaitForever);
@@ -489,43 +479,47 @@ void LoRa_Task(void *argument)
 		osMutexRelease(retxMutexHandle);
 
 		//Enviar paquete
-		osMutexAcquire(loraMutexHandle, osWaitForever);
 		osMutexAcquire(honeyCombMutexHandle, osWaitForever);
 
 		switch (cmd) {
-			case 1:	//ALERT (SLEEP o DETECTION)
-				LoRa_transmit_alert_pkg(&myLoRa, &honey_comb);
-				LoRa_gotoMode(&myLoRa, RXSINGLE_MODE);
+			case 1:	//ALERT (DETECTION o DRONE_LOST o SLEEPING)
+				HC12_transmit_alert_pkg(&huart5, &honey_comb);
+				print_debug("HC12_TX: ALERT\r\n");
 				break;
 
-			case 2:	//BATTERY
-				LoRa_transmit_energy_pkg(&myLoRa, &honey_comb);
+			case 2:	//ENERGY
+				HC12_transmit_energy_pkg(&huart5, &honey_comb);
+				print_debug("HC12_TX: ENERGY\r\n");
 				break;
 
 			case 3:	//GPS
-				LoRa_transmit_gps_pkg(&myLoRa, &honey_comb);
+				HC12_transmit_gps_pkg(&huart5, &honey_comb);
+				print_debug("HC12_TX: GPS\r\n");
 				break;
 
-			case TRIANGULATION_CMD:	//TRIANGULATION (constante)
-				LoRa_transmit_triang_pkg(&myLoRa, &honey_comb);
+			case TRIANGULATION_CMD:	//TRIANGULATION (constante=4)
+				HC12_transmit_triang_pkg(&huart5, &honey_comb);
+				print_debug("HC12_TX: TRIANG\r\n");
 				break;
 		}
 
 		osMutexRelease(honeyCombMutexHandle);
-		osMutexRelease(loraMutexHandle);
-		osDelay(500);  //Espaciado entre reintentos
+		osDelay(300);  //Espaciado entre reintentos (HC12 más lento que LoRa)
 	}
 	else if (retx_tracker.retry_count >= MAX_RETRIES) {
 		//Falló tras 5 reintentos
+		print_debug("HC12_TX: MAX_RETRIES REACHED\r\n");
 		current_cmd = 0;  //Liberar para siguiente
+		retx_tracker.retry_count = 0;
+		retx_tracker.pending_cmd = 0;
 		osMutexRelease(retxMutexHandle);
 	}
 	else {
 		osMutexRelease(retxMutexHandle);
 	}
 	osDelay(100);
-  }
-  /* USER CODE END LoRa_Task */
+	}
+  /* USER CODE END HC12_Task */
 }
 
 /* USER CODE BEGIN Header_Battery_Task */
@@ -551,7 +545,7 @@ void Battery_Task(void *argument)
 		osMutexRelease(honeyCombMutexHandle);
 
 		cmd = 2;
-		osMessageQueuePut(loraQueueHandle, &cmd, 0, 100);
+		osMessageQueuePut(hc12QueueHandle, &cmd, 0, 100);
 	  }
   }
   /* USER CODE END Battery_Task */
@@ -582,7 +576,7 @@ void GPS_Task(void *argument)
 				  osMutexRelease(honeyCombMutexHandle);
 
 				  cmd = 3;
-				  osMessageQueuePut(loraQueueHandle, &cmd, 0, 100);
+				  osMessageQueuePut(hc12QueueHandle, &cmd, 0, 100);
 				  print_debug("GPS OK\r\n");
 			  }
     		  else {
@@ -635,7 +629,7 @@ void DetectionTask(void *argument)
 			if(total_score > DETECTION_THRESHOLD) {
 				if(status == TRIANGULATION) { 							//Detecto y ya estoy triangulando
 					cmd = 4;
-					osMessageQueuePut(loraQueueHandle, &cmd, 0, 100);
+					osMessageQueuePut(hc12QueueHandle, &cmd, 0, 100);
 				}
 				else {
 					osMutexAcquire(honeyCombMutexHandle, osWaitForever);//Preparo para iniciar detección
@@ -644,13 +638,13 @@ void DetectionTask(void *argument)
 					osMutexRelease(honeyCombMutexHandle);
 					print_debug("DRON DETECTADO, esperamos central\r\n");
 					cmd = 1;
-					osMessageQueuePut(loraQueueHandle, &cmd, 0, 100);
+					osMessageQueuePut(hc12QueueHandle, &cmd, 0, 100);
 				}
 			} else if ((total_score < DETECTION_THRESHOLD) && status == TRIANGULATION) {
 				print_debug("DRON PERDIDO...\r\n");
 				honey_comb.status = DRONE_LOST;
 				cmd = 1;
-				osMessageQueuePut(loraQueueHandle, &cmd, 0, 100);
+				osMessageQueuePut(hc12QueueHandle, &cmd, 0, 100);
 			}
 		}
 	}
@@ -661,126 +655,124 @@ void DetectionTask(void *argument)
   /* USER CODE END DetectionTask */
 }
 
-/* USER CODE BEGIN Header_LoRa_Rx_Task */
+/* USER CODE BEGIN Header_HC12_Rx_Task */
 /**
-* @brief Function implementing the LoRa_Rx_Task thread.
+* @brief Function implementing the HC12_Rx_Task thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_LoRa_Rx_Task */
-void LoRa_Rx_Task(void *argument)
+/* USER CODE END Header_HC12_Rx_Task */
+void HC12_Rx_Task(void *argument)
 {
-  /* USER CODE BEGIN LoRa_Rx_Task */
-    uint8_t num_bytes;
+  /* USER CODE BEGIN HC12_Rx_Task */
     uint8_t initialized = 0;
+
+    HC12_StartReceiveIdleDMA(&huart5, honey_comb.rx_buffer, HC12_MAX_SIZE);
+    print_debug("HC12_Rx_Task: RX DMA iniciado\r\n");
   /* Infinite loop */
-   for(;;)
-       {
-	   //INICIALIZACIÓN: Poner LoRa en modo escucha
-	   if (!initialized) {
-		   osMutexAcquire(loraMutexHandle, osWaitForever);
-		   LoRa_gotoMode(&myLoRa, RXSINGLE_MODE);
-		   osMutexRelease(loraMutexHandle);
-		   initialized = 1;
-	   }
+  for(;;)
+  {
+	//INICIALIZACIÓN: Poner HC12 en modo escucha
+	if (!initialized) {
+	   HC12_StartReceiveIdleDMA(&huart5, honey_comb.rx_buffer, HC12_MAX_SIZE);
+	   print_debug("HC12_Rx_Task: RX DMA iniciado\r\n");
+	   initialized = 1;
+	}
 
-	   //ESPERAR INTERRUPCIÓN: Timeout corto para evitar gaps largos
-	   if (osSemaphoreAcquire(loraRxSemHandle, 50) == osOK) {
+	//ESPERAR INTERRUPCIÓN: Timeout corto para evitar gaps largos
+	if (osSemaphoreAcquire(hc12RxSemHandle, 100) == osOK) {
 
-		   osMutexAcquire(honeyCombMutexHandle, osWaitForever);
-		   osMutexAcquire(loraMutexHandle, osWaitForever);
+	   osMutexAcquire(honeyCombMutexHandle, osWaitForever);
 
-		   //RECEPCIÓN SIN CAMBIAR MODO: Ya estamos en RXSINGLE_MODE
-		   num_bytes = LoRa_receive_no_mode_change(&myLoRa, honey_comb.rx_buffer,LORA_MAX_SIZE);
+	   //VALIDAR FORMATO Y ID
+	   if (honey_comb.rx_buffer[0] == honey_comb.baliza_id) {
 
-		   if (num_bytes > 0 && honey_comb.rx_buffer[0] == honey_comb.baliza_id) {
+		   //PROCESAR ACK ESPERADO (desde TX)
+		   if (honey_comb.rx_buffer[1] == DETECTION_ACK_CMD) {  // 0xB0
+			   honey_comb.status = TRIANGULATION;
+			   print_debug("HC12_RX: DETECTION_ACK [OK]\r\n");
 
-			   //PROCESAR COMANDO ESPERADO (desde DETECTION)
-			   if (honey_comb.rx_buffer[1] == DETECTION_ACK_CMD) {
-				   honey_comb.status = TRIANGULATION;
-				   print_debug("RX: DETECTION_ACK [OK]\r\n");
+			   //Limpiar flag de retransmisión
+			   osMutexAcquire(retxMutexHandle, osWaitForever);
+			   if (retx_tracker.pending_cmd == 1 && current_cmd == 1) {
+				   retx_tracker.pending_cmd = 0;
+				   retx_tracker.retry_count = 0;
+				   current_cmd = 0;
+			   }
+			   osMutexRelease(retxMutexHandle);
 
-				   //Limpiar flag de retransmisión
-				   osMutexAcquire(retxMutexHandle, osWaitForever);
-				   if (retx_tracker.pending_cmd == 1 && current_cmd == 1) {
-					   retx_tracker.pending_cmd = 0;
-					   retx_tracker.retry_count = 0;
-					   current_cmd = 0;
-				   }
-				   osMutexRelease(retxMutexHandle);
+		   } else if (honey_comb.rx_buffer[1] == DRONE_LOST_ACK_CMD) {  // 0xC0
+			   honey_comb.status = SCAN;
+			   print_debug("HC12_RX: DRONE_LOST_ACK [OK]\r\n");
 
-			   } else if (honey_comb.rx_buffer[1] == DRONE_LOST_ACK_CMD) {
-				   honey_comb.status = SCAN;
-				   print_debug("RX: DRONE_LOST_ACK [OK]\r\n");
+			   //Limpiar flag de retransmisión
+			   osMutexAcquire(retxMutexHandle, osWaitForever);
+			   if (retx_tracker.pending_cmd == 1 && current_cmd == 1) {
+				   retx_tracker.pending_cmd = 0;
+				   retx_tracker.retry_count = 0;
+				   current_cmd = 0;
+			   }
+			   osMutexRelease(retxMutexHandle);
 
-				   //Limpiar flag de retransmisión
-				   osMutexAcquire(retxMutexHandle, osWaitForever);
-				   if (retx_tracker.pending_cmd == 1 && current_cmd == 1) {
-					   retx_tracker.pending_cmd = 0;
-					   retx_tracker.retry_count = 0;
-					   current_cmd = 0;
-				   }
-				   osMutexRelease(retxMutexHandle);
-			   } else if (honey_comb.rx_buffer[1] == ENERGY_ACK_CMD) {
-			       print_debug("RX: ENERGY_ACK [OK]\r\n");
+		   } else if (honey_comb.rx_buffer[1] == ENERGY_ACK_CMD) {  // 0xC1
+			   print_debug("HC12_RX: ENERGY_ACK [OK]\r\n");
 
-			       osMutexAcquire(retxMutexHandle, osWaitForever);
-			       if (retx_tracker.pending_cmd == 2 && current_cmd == 2) {
-			           retx_tracker.pending_cmd = 0;
-			           retx_tracker.retry_count = 0;
-			           current_cmd = 0;
-			       }
-			       osMutexRelease(retxMutexHandle);
+			   osMutexAcquire(retxMutexHandle, osWaitForever);
+			   if (retx_tracker.pending_cmd == 2 && current_cmd == 2) {
+				   retx_tracker.pending_cmd = 0;
+				   retx_tracker.retry_count = 0;
+				   current_cmd = 0;
+			   }
+			   osMutexRelease(retxMutexHandle);
 
-			   } else if (honey_comb.rx_buffer[1] == GPS_ACK_CMD) {
-			       print_debug("RX: GPS_ACK [OK]\r\n");
+		   } else if (honey_comb.rx_buffer[1] == GPS_ACK_CMD) {  // 0xC2
+			   print_debug("HC12_RX: GPS_ACK [OK]\r\n");
 
-			       osMutexAcquire(retxMutexHandle, osWaitForever);
-			       if (retx_tracker.pending_cmd == 3 && current_cmd == 3) {
-			           retx_tracker.pending_cmd = 0;
-			           retx_tracker.retry_count = 0;
-			           current_cmd = 0;
-			       }
-			       osMutexRelease(retxMutexHandle);
-			   } else if (honey_comb.rx_buffer[1] == WKP_CMD) {
-				   print_debug("RX: WKP_CMD [OK]\r\n");
-				   if (honey_comb.status == SLEEPING) { //Solo despertamos si si estaba en sleep
-					   osSemaphoreRelease(wkpCmdSemHandle);
-				   }
+			   osMutexAcquire(retxMutexHandle, osWaitForever);
+			   if (retx_tracker.pending_cmd == 3 && current_cmd == 3) {
+				   retx_tracker.pending_cmd = 0;
+				   retx_tracker.retry_count = 0;
+				   current_cmd = 0;
+			   }
+			   osMutexRelease(retxMutexHandle);
+
+		   } else if (honey_comb.rx_buffer[1] == WKP_CMD) {  // 0xE0
+			   print_debug("HC12_RX: WKP_CMD [OK]\r\n");
+			   if (honey_comb.status == SLEEPING) {
+				   osSemaphoreRelease(wkpCmdSemHandle);
 			   }
 
-			   //PROCESAR COMANDO INESPERADO (desde SCAN/SLEEPING)
-			   else if (honey_comb.rx_buffer[1] == SLEEP_CMD) {
-				   print_debug("RX: SLEEP_CMD [OK]\r\n");
-				   osSemaphoreRelease(sleepSemHandle);
-
-			   } else if (honey_comb.rx_buffer[1] == DRONE_LOST_AUX_CMD &&
-						  honey_comb.node_role == aux) {
-				   print_debug("RX: DRONE_LOST_AUX [OK]\r\n");
-				   osSemaphoreRelease(sleepSemHandle);
-			   }
 		   }
-		   else if (num_bytes > 0) {
-			   print_debug("RX: Invalid packet received\r\n");
+		   //PROCESAR COMANDO INESPERADO (desde SCAN/SLEEPING)
+		   else if (honey_comb.rx_buffer[1] == SLEEP_CMD) {  // 0xA0
+			   print_debug("HC12_RX: SLEEP_CMD [OK]\r\n");
+			   osSemaphoreRelease(sleepSemHandle);
+
+		   } else if (honey_comb.rx_buffer[1] == DRONE_LOST_AUX_CMD &&  // 0xD0
+					  honey_comb.node_role == aux) {
+			   print_debug("HC12_RX: DRONE_LOST_AUX [OK]\r\n");
+			   osSemaphoreRelease(sleepSemHandle);
 		   }
-
-		   osMutexRelease(loraMutexHandle);
-		   osMutexRelease(honeyCombMutexHandle);
-
-		   //REINICIAR ESCUCHA: Volver a RXSINGLE_MODE después de procesar
-		   osMutexAcquire(loraMutexHandle, osWaitForever);
-		   LoRa_gotoMode(&myLoRa, RXSINGLE_MODE);
-		   osMutexRelease(loraMutexHandle);
+		   else {
+			   print_debug("HC12_RX: Unknown CMD\r\n");
+		   }
 	   }
-	   else {
-		   //TIMEOUT: No recibimos nada en 50ms
-		   //Asegurar que estamos en RXSINGLE_MODE (por si acaso)
-		   osMutexAcquire(loraMutexHandle, 50);
-		   LoRa_gotoMode(&myLoRa, RXSINGLE_MODE);
-		   osMutexRelease(loraMutexHandle);
+	   else if (honey_comb.rx_buffer[0] != 0x00) {
+		   print_debug("HC12_RX: ID mismatch\r\n");
 	   }
-   }
-  /* USER CODE END LoRa_Rx_Task */
+
+	   osMutexRelease(honeyCombMutexHandle);
+
+	   //REINICIAR ESCUCHA: Volver a escuchar después de procesar
+	   HC12_StartReceiveIdleDMA(&huart5, honey_comb.rx_buffer, HC12_MAX_SIZE);
+	}
+	else {
+	   //TIMEOUT: No recibimos nada en 100ms
+	   //Simplemente reiniciar RX
+	   HC12_StartReceiveIdleDMA(&huart5, honey_comb.rx_buffer, HC12_MAX_SIZE);
+	}
+	}
+  /* USER CODE END HC12_Rx_Task */
 }
 
 /* USER CODE BEGIN Header_SleepTask */
@@ -806,7 +798,7 @@ void SleepTask(void *argument)
 		osMutexRelease(honeyCombMutexHandle);
 
 		cmd = 1;
-		osMessageQueuePut(loraQueueHandle, &cmd, 0, 100);
+		osMessageQueuePut(hc12QueueHandle, &cmd, 0, 100);
 
 		osDelay(1000); //Tiempo que esperamos para avisar a central que en efecto vamos a dormir
         //DESACTIVAR INTERRUPCIONES UART ANTES DE DORMIR
