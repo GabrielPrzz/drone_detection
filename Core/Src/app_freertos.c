@@ -28,6 +28,7 @@
 #include "LoRa.h"
 #include "MAX17048.h"
 #include "Neo_M6.h"
+#include "FFT_DroneDetection_Microphone.h"
 #include <stdio.h>
 #include <string.h>
 /* USER CODE END Includes */
@@ -45,7 +46,7 @@
 #define DELTA_TH         1.40f
 #define CH_CONC_TH       0.41f
 #define RANGE_TH         22.89f
-#define DETECTION_THRESHOLD 85
+#define DETECTION_THRESHOLD 70		//Contempla minimo un 70 en signal y un 80 en mic
 
 //HIVEMASTER_COMMANDS
 #define SLEEP_CMD 0xA0
@@ -83,6 +84,7 @@ extern TIM_HandleTypeDef htim6;
 extern LoRa myLoRa;
 extern uint8_t gps_buffer[512];
 extern GPS_Data_t gps_data;
+extern uint8_t adc_half;
 RetxTracker retx_tracker = {0, 0};
 uint8_t current_cmd = 0;
 
@@ -131,7 +133,7 @@ osThreadId_t DetectionTaskHandle;
 const osThreadAttr_t DetectionTask_attributes = {
   .name = "DetectionTask",
   .priority = (osPriority_t) osPriorityAboveNormal,
-  .stack_size = 1024 * 4
+  .stack_size = 12000 * 4
 };
 /* Definitions for LoRa_Rx_Task */
 osThreadId_t LoRa_Rx_TaskHandle;
@@ -606,8 +608,7 @@ void DetectionTask(void *argument)
 
 	uint8_t cmd;
 	uint8_t status;
-	uint8_t signal_score, mic_score;
-	uint8_t total_score;
+	float_t signal_score, mic_score, total_score;
 
   /* Infinite loop */
   for(;;)
@@ -616,22 +617,16 @@ void DetectionTask(void *argument)
 		signal_score = 0, mic_score = 0, total_score = 0;
 		if(osSemaphoreAcquire(newRssiSemHandle, osWaitForever) == osOK) {
 			osMutexAcquire(rssiMutexHandle, osWaitForever);
-			signal_score = drone_signal_detection(honey_comb.transmission.rssi_buffer);
+			signal_score = (float_t)drone_signal_detection(honey_comb.transmission.rssi_buffer);
 			osMutexRelease(rssiMutexHandle);
 
-			//Falta implementar microfono
+			mic_score = Microphone_getDetectionScore(adc_half);
 
-			total_score = ((signal_score*80)/100)+((mic_score * 20)/100);
+			total_score = ((signal_score * 0.8))+((mic_score * 0.2));
 
-			sprintf(debug, "Mic_Score: %d\r\n",
-					mic_score);
-			print_debug(debug);
-			sprintf(debug, "Signal Score: %d\r\n",
-					signal_score);
-			print_debug(debug);
-			sprintf(debug, "Total Score: %d\r\n",
-					total_score);
-			print_debug(debug);
+            sprintf(debug, "Mic:%.0f Sig:%.0f Tot:%.0f\r\n",
+                    mic_score, signal_score, total_score);
+            print_debug(debug);
 
 			osMutexAcquire(honeyCombMutexHandle, osWaitForever);
 			status = honey_comb.status;
@@ -749,7 +744,9 @@ void LoRa_Rx_Task(void *argument)
 			       osMutexRelease(retxMutexHandle);
 			   } else if (honey_comb.rx_buffer[1] == WKP_CMD) {
 				   print_debug("RX: WKP_CMD [OK]\r\n");
-				   osSemaphoreRelease(wkpCmdSemHandle);
+				   if (honey_comb.status == SLEEPING) { //Solo despertamos si si estaba en sleep
+					   osSemaphoreRelease(wkpCmdSemHandle);
+				   }
 			   }
 
 			   //PROCESAR COMANDO INESPERADO (desde SCAN/SLEEPING)
@@ -802,6 +799,7 @@ void SleepTask(void *argument)
   {
 	if (osSemaphoreAcquire(sleepSemHandle, osWaitForever) == osOK) {
 		print_debug("TONY ENTRANDO SLEEP MODE\r\n");
+
 		osMutexAcquire(honeyCombMutexHandle,osWaitForever);
 		honey_comb.status = SLEEPING;
 		honey_comb.transmission.transmission_type = ALERT;
@@ -810,14 +808,31 @@ void SleepTask(void *argument)
 		cmd = 1;
 		osMessageQueuePut(loraQueueHandle, &cmd, 0, 100);
 
-		//Entramos a SLEEP
-		HAL_SuspendTick();
-		HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
-		//Despertamos aqui
-		if (osSemaphoreAcquire(wkpCmdSemHandle, osWaitForever) == osOK) {
-			//Esperamos validar que nos haya despertado el comando correcto
-			HAL_NVIC_SystemReset();
-		}
+		osDelay(1000); //Tiempo que esperamos para avisar a central que en efecto vamos a dormir
+        //DESACTIVAR INTERRUPCIONES UART ANTES DE DORMIR
+        HAL_UART_DMAStop(&huart4);    //ESP32
+        HAL_UART_DMAStop(&hlpuart1);  //GPS
+        HAL_NVIC_DisableIRQ(UART4_IRQn);
+        HAL_NVIC_DisableIRQ(LPUART1_IRQn);
+
+		//Entramos a SLEEP y SOLO salimos de ahi por el reset
+        while(1) {
+            HAL_SuspendTick();
+            HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
+
+            //Despierta aquí por IRQ LoRa
+            HAL_ResumeTick();
+
+            //Validar comando WKP (timeout 2s)
+            if (osSemaphoreAcquire(wkpCmdSemHandle, 2000) == osOK) {
+                print_debug("WKP validado, reseteando\r\n");
+                osDelay(100);
+                HAL_NVIC_SystemReset();
+            }
+            //Si timeout o comando inválido, el nodo vuelve a dormir
+            print_debug("Comando invalido, re-sleep\r\n");
+            //Buelve a HAL_PWR_EnterSTOPMode
+        }
 	}
   }
   /* USER CODE END SleepTask */
@@ -837,7 +852,7 @@ void new_rssi_load(int8_t* data, scan_t* history, uint8_t* index) {
 }
 
 uint8_t drone_signal_detection(scan_t* history) {
-    // Concatenar últimas 4 ventanas de scan
+    //Concatenar últimas 4 ventanas de scan
     int8_t rssi_data[52];
     char debug_msg[80];
 

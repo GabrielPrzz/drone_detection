@@ -653,7 +653,7 @@ uint8_t LoRa_Master_connection(LoRa* _LoRa, HoneyComb_m* honey_comb) {
 
 	//ANTES de recibir: configurar modo RXSINGLE
 	LoRa_gotoMode(_LoRa, RXSINGLE_MODE);
-	HAL_Delay(10);
+	HAL_Delay(100);
 }
 
 void LoRa_transmit_error_pkg(LoRa* _LoRa, HoneyComb_m* honey_comb) {

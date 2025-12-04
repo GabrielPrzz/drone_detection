@@ -55,6 +55,10 @@
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
+extern DMA_NodeTypeDef Node_GPDMA2_Channel0;
+extern DMA_QListTypeDef List_GPDMA2_Channel0;
+extern DMA_HandleTypeDef handle_GPDMA2_Channel0;
+extern ADC_HandleTypeDef hadc1;
 extern DMA_HandleTypeDef handle_GPDMA1_Channel3;
 extern DMA_NodeTypeDef Node_GPDMA1_Channel4;
 extern DMA_QListTypeDef List_GPDMA1_Channel4;
@@ -66,6 +70,7 @@ extern SPI_HandleTypeDef hspi1;
 extern TIM_HandleTypeDef htim3;
 extern TIM_HandleTypeDef htim4;
 extern TIM_HandleTypeDef htim6;
+extern TIM_HandleTypeDef htim7;
 extern TIM_HandleTypeDef htim15;
 
 /* USER CODE BEGIN EV */
@@ -241,6 +246,20 @@ void GPDMA1_Channel4_IRQHandler(void)
 }
 
 /**
+  * @brief This function handles ADC1 global interrupt.
+  */
+void ADC1_IRQHandler(void)
+{
+  /* USER CODE BEGIN ADC1_IRQn 0 */
+
+  /* USER CODE END ADC1_IRQn 0 */
+  HAL_ADC_IRQHandler(&hadc1);
+  /* USER CODE BEGIN ADC1_IRQn 1 */
+
+  /* USER CODE END ADC1_IRQn 1 */
+}
+
+/**
   * @brief This function handles TIM3 global interrupt.
   */
 void TIM3_IRQHandler(void)
@@ -280,6 +299,20 @@ void TIM6_IRQHandler(void)
   /* USER CODE BEGIN TIM6_IRQn 1 */
 
   /* USER CODE END TIM6_IRQn 1 */
+}
+
+/**
+  * @brief This function handles TIM7 global interrupt.
+  */
+void TIM7_IRQHandler(void)
+{
+  /* USER CODE BEGIN TIM7_IRQn 0 */
+
+  /* USER CODE END TIM7_IRQn 0 */
+  HAL_TIM_IRQHandler(&htim7);
+  /* USER CODE BEGIN TIM7_IRQn 1 */
+
+  /* USER CODE END TIM7_IRQn 1 */
 }
 
 /**
@@ -336,6 +369,20 @@ void TIM15_IRQHandler(void)
   /* USER CODE BEGIN TIM15_IRQn 1 */
 
   /* USER CODE END TIM15_IRQn 1 */
+}
+
+/**
+  * @brief This function handles GPDMA2 Channel 0 global interrupt.
+  */
+void GPDMA2_Channel0_IRQHandler(void)
+{
+  /* USER CODE BEGIN GPDMA2_Channel0_IRQn 0 */
+
+  /* USER CODE END GPDMA2_Channel0_IRQn 0 */
+  HAL_DMA_IRQHandler(&handle_GPDMA2_Channel0);
+  /* USER CODE BEGIN GPDMA2_Channel0_IRQn 1 */
+
+  /* USER CODE END GPDMA2_Channel0_IRQn 1 */
 }
 
 /* USER CODE BEGIN 1 */

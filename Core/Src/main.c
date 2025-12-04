@@ -28,6 +28,7 @@
 #include "MAX17048.h"
 #include "LoRa.h"
 #include "Neo_M6.h"
+#include "FFT_DroneDetection_Microphone.h"
 #include <stdio.h>
 /* USER CODE END Includes */
 
@@ -48,6 +49,9 @@
 
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
+DMA_NodeTypeDef Node_GPDMA2_Channel0;
+DMA_QListTypeDef List_GPDMA2_Channel0;
+DMA_HandleTypeDef handle_GPDMA2_Channel0;
 
 I2C_HandleTypeDef hi2c2;
 DMA_HandleTypeDef handle_GPDMA1_Channel3;
@@ -65,6 +69,7 @@ SPI_HandleTypeDef hspi1;
 TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim4;
 TIM_HandleTypeDef htim6;
+TIM_HandleTypeDef htim7;
 
 /* USER CODE BEGIN PV */
 HoneyComb_m honey_comb = {0};
@@ -72,6 +77,7 @@ LoRa myLoRa;
 GPS_Data_t gps_data = {0};
 
 uint8_t rssi_index = 0;
+uint8_t adc_half = 0;
 int8_t uart_rx_buffer[15] = {0};  			//[0xAA][rssi×13][CRC] Variable auxiliar
 uint8_t gps_buffer[512] = {0};
 
@@ -92,6 +98,7 @@ void SystemClock_Config(void);
 void MX_FREERTOS_Init(void);
 static void MX_GPIO_Init(void);
 static void MX_GPDMA1_Init(void);
+static void MX_GPDMA2_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_LPUART1_UART_Init(void);
 static void MX_UART4_Init(void);
@@ -102,6 +109,7 @@ static void MX_TIM4_Init(void);
 static void MX_TIM6_Init(void);
 static void MX_ICACHE_Init(void);
 static void MX_I2C2_Init(void);
+static void MX_TIM7_Init(void);
 /* USER CODE BEGIN PFP */
 void print_debug(const char *msg);
 void print_debug_F(const char *msg);
@@ -145,6 +153,7 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_GPDMA1_Init();
+  MX_GPDMA2_Init();
   MX_ADC1_Init();
   MX_LPUART1_UART_Init();
   MX_UART4_Init();
@@ -155,10 +164,11 @@ int main(void)
   MX_TIM6_Init();
   MX_ICACHE_Init();
   MX_I2C2_Init();
+  MX_TIM7_Init();
   /* USER CODE BEGIN 2 */
 	HAL_TIM_Base_Stop_IT(&htim3); 						//Solo se activa cuando las inicializaciones estan correctas
 	HAL_TIM_Base_Stop_IT(&htim4);
-	HAL_TIM_Base_Stop_IT(&htim6);
+	HAL_TIM_Base_Stop_IT(&htim7);
 	HAL_UART_Receive_DMA(&hlpuart1, gps_buffer, 512);
 
 	//LoRa MODULE Startup
@@ -171,6 +181,8 @@ int main(void)
 	//GPS startup
 	GPS_startup_validation(&hlpuart1, gps_buffer, &honey_comb);
 	honey_comb.devices.GPS_State = heartbeat_GPS(gps_buffer);
+
+	Microphone_init(&hadc1, &htim6);
 
 	 if (honey_comb.devices.LoRa_State    ||
 			 honey_comb.devices.Esp32_State   ||
@@ -191,7 +203,7 @@ int main(void)
 
 		while (!honey_comb.master_acknowledge) { 						//Esperamos la recepcion e intentamos conectarnos cada 200ms
 			LoRa_Master_connection(&myLoRa, &honey_comb);
-			HAL_Delay(1000);
+			HAL_Delay(500);
 		}
 
 		while (honey_comb.status == NODE_ERROR) {
@@ -201,7 +213,7 @@ int main(void)
 		honey_comb.status = SCAN;
 		HAL_TIM_Base_Start_IT(&htim3); 									//Solo se activa cuando las inicializaciones estan correctas
 		HAL_TIM_Base_Start_IT(&htim4);
-		HAL_TIM_Base_Start_IT(&htim6);
+		HAL_TIM_Base_Start_IT(&htim7);
 	 }
 	 else {
 		 print_debug_F("CRITICAL ERROR: LoRa failed\r\n");
@@ -321,11 +333,11 @@ static void MX_ADC1_Init(void)
   hadc1.Init.ContinuousConvMode = DISABLE;
   hadc1.Init.NbrOfConversion = 1;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
-  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
-  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
-  hadc1.Init.DMAContinuousRequests = DISABLE;
+  hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIG_T6_TRGO;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
+  hadc1.Init.DMAContinuousRequests = ENABLE;
   hadc1.Init.SamplingMode = ADC_SAMPLING_MODE_NORMAL;
-  hadc1.Init.Overrun = ADC_OVR_DATA_PRESERVED;
+  hadc1.Init.Overrun = ADC_OVR_DATA_OVERWRITTEN;
   hadc1.Init.OversamplingMode = DISABLE;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
   {
@@ -379,6 +391,34 @@ static void MX_GPDMA1_Init(void)
   /* USER CODE BEGIN GPDMA1_Init 2 */
 
   /* USER CODE END GPDMA1_Init 2 */
+
+}
+
+/**
+  * @brief GPDMA2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_GPDMA2_Init(void)
+{
+
+  /* USER CODE BEGIN GPDMA2_Init 0 */
+
+  /* USER CODE END GPDMA2_Init 0 */
+
+  /* Peripheral clock enable */
+  __HAL_RCC_GPDMA2_CLK_ENABLE();
+
+  /* GPDMA2 interrupt Init */
+    HAL_NVIC_SetPriority(GPDMA2_Channel0_IRQn, 5, 0);
+    HAL_NVIC_EnableIRQ(GPDMA2_Channel0_IRQn);
+
+  /* USER CODE BEGIN GPDMA2_Init 1 */
+
+  /* USER CODE END GPDMA2_Init 1 */
+  /* USER CODE BEGIN GPDMA2_Init 2 */
+
+  /* USER CODE END GPDMA2_Init 2 */
 
 }
 
@@ -761,15 +801,15 @@ static void MX_TIM6_Init(void)
 
   /* USER CODE END TIM6_Init 1 */
   htim6.Instance = TIM6;
-  htim6.Init.Prescaler = 29311;
+  htim6.Init.Prescaler = 0;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 65501;
+  htim6.Init.Period = 7999;
   htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
   {
     Error_Handler();
   }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
   sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
   if (HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig) != HAL_OK)
   {
@@ -778,6 +818,44 @@ static void MX_TIM6_Init(void)
   /* USER CODE BEGIN TIM6_Init 2 */
 
   /* USER CODE END TIM6_Init 2 */
+
+}
+
+/**
+  * @brief TIM7 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM7_Init(void)
+{
+
+  /* USER CODE BEGIN TIM7_Init 0 */
+
+  /* USER CODE END TIM7_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM7_Init 1 */
+
+  /* USER CODE END TIM7_Init 1 */
+  htim7.Instance = TIM7;
+  htim7.Init.Prescaler = 29311;
+  htim7.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim7.Init.Period = 65501;
+  htim7.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim7) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim7, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM7_Init 2 */
+
+  /* USER CODE END TIM7_Init 2 */
 
 }
 
@@ -846,14 +924,16 @@ void print_debug_F(const char *msg) {
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
-	if(huart == &hlpuart1) {									//GPS
-		osSemaphoreRelease(lpuart1RxSemHandle);
-		print_debug_F("UART1_RX callback\r\n");
-	}
+	if(honey_comb.master_acknowledge) {
+		if(huart == &hlpuart1) {									//GPS
+			osSemaphoreRelease(lpuart1RxSemHandle);
+			print_debug_F("UART1_RX callback\r\n");
+		}
 
-	if(huart == &huart4) {										//SCAN
-		osSemaphoreRelease(uart4RxSemHandle);
-		print_debug_F("UART4_RX callback\r\n");
+		if(huart == &huart4) {										//SCAN
+			osSemaphoreRelease(uart4RxSemHandle);
+			print_debug_F("UART4_RX callback\r\n");
+		}
 	}
 }
 
@@ -874,6 +954,16 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin) {
 		}
 	}
 }
+
+void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef *hadc) {
+	adc_half = 0;
+}
+
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
+	adc_half = 1;
+}
+
+
 
 /* USER CODE END 4 */
 
@@ -898,8 +988,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		osSemaphoreRelease(chargerSemHandle);
 	}
 
-	if(htim == &htim6) { //60s dedicado a gps
-		print_debug("TIM6 callback\r\n");
+	if(htim == &htim7) { //60s dedicado a gps
+		print_debug("TIM7 callback\r\n");
 		osSemaphoreRelease(gpsSemHandle);
 	}
   /* USER CODE END Callback 0 */
